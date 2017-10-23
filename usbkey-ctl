@@ -1,0 +1,162 @@
+#!/bin/bash
+
+###
+# usbkey-ctl
+# USB Key based SSH key management
+#
+# DEPENDENCIES
+# 'keychain' : For the ssh-agent management that will ensure all shells for the 
+#              same user will share an ssh-agent.
+#            [Keychain project]: https://www.funtoo.org/Keychain
+# AUTHORS
+#   Steven Davis <sgdavis@bioneos.com> 
+#   Bio::Neos, Inc. <http://bioneos.com/>
+#
+# LICENSE
+# Permission is hereby granted, free of charge, to any person obtaining a copy 
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+
+# Common variables
+logger -t usbkey "Executing 'usbkey-ctl $1' for $(whoami) [$2]"
+supported_sessions="xfce4-session|gnome-session|lxsession|kded4|cinnamon-session"
+user=`ps -A -o user,comm |grep -E "(?${supported_sessions})"| awk '{print $1}'`
+debug=0
+# Constants
+mount_point=/tmp/usbkey
+# Key lifespan (in minutes)
+timeout=720
+
+# Necessary for running
+mkdir -p ${mount_point}
+
+# Determine operating mode
+case "$1" in
+  # Process when usbkey is removed:
+  # 1) Find the running X desktop
+  # 2) lock screen (desktop specific)
+  # 3) clear all keys from ssh-agent
+  removed)
+    # Determine what desktop we are looking at
+    check_gnome=$(ps -aux | awk '{print $11}' | grep gnome-session)
+    if [[ -n $check_gnome ]]; then
+      desktop=gnome
+      sessionid=`/bin/loginctl list-sessions | grep ${user} | awk '{print $1}'`
+    fi
+    check_cinnamon=$(ps -aux | awk '{print $11}' | grep cinnamon-session)
+    check_lxde=$(ps -aux | awk '{print $11}' | grep lxsession)
+    check_xfce=$(ps -aux | awk '{print $11}' | grep xfce4-session)
+    check_kde=$(ps -aux | awk '{print $11}' | grep kded4)
+    if [[ -n $check_cinnamon ]]; then
+      desktop=cinnamon
+    elif [[ -n $check_lxde ]]; then
+      desktop=lxde
+    elif [[ -n $check_xfce ]]; then
+      desktop=xfce
+    elif [[ -n $check_kde ]]; then
+      desktop=kde
+    fi
+    if [ $debug -eq 1 ]; then logger -t usbkey "[DEBUG] Locking screen for $user [Desktop: $desktop]..."; fi
+
+    # Lock the screen appropriately
+    if [ -n ${user} -a -n ${desktop} -a $debug -eq 0 ]
+    then
+      case $desktop in
+        gnome)
+          /bin/loginctl lock-session $sessionid
+        ;;
+        cinnamon)
+          /bin/su ${user} -c "DISPLAY=:0 /usr/bin/cinnamon-screensaver-command -a"
+        ;;
+        xfce)
+          /bin/su ${user} -c "DISPLAY=:0 /usr/bin/xflock4"
+        ;;
+        lxde | kde)
+          /bin/su ${user} -c "DISPLAY=:0 /usr/bin/xscreensaver-command -lock"
+        ;;
+      esac
+    fi
+
+    # Clear out the ssh-agent keys
+    logger -t usbkey "Removing all SSH identities from the agent for ${user}..."
+    /bin/su - ${user} -c "ssh-add -D" 
+  ;;
+  # Process to when usbkey is inserted:
+  # 1) find user running the current X session (above)
+  # 2) mount usbkey media
+  # 3) decrypt /${mount_point}/${user}.gpg to get secret key for LUKS device
+  #   If successful:
+  # 4) decrypt LUKS device 
+  # 6) mount decrypted image
+  # 7) add all keys from decrypted image
+  # 8) umount decrypted image
+  # 9) close LUKS device
+  # 10) unmount / eject usbkey
+  inserted)
+    # Mount usbkey media
+    mount /dev/$2 ${mount_point}
+    # Decrypt the secret
+    #   (this must be gpg encrypted with ${user}'s key, should contain the LUKS secret)
+    secret=$(/bin/su ${user} -c "gpg --decrypt /tmp/usbkey/${user}.gpg")
+    gpg_check=$?
+
+    # Unlock only if a successful decryption occurred
+    if [ -n ${user} -a -n ${secret} -a ${gpg_check} -eq 0 ]
+    then
+      # Begin SSH key management
+      logger -t usbkey "Found approved usbkey for ${user}..."
+      # Open and mount the LUKS device
+      logger -t usbkey "Opening / mounting encrypted device..."
+      echo ${secret} | cryptsetup open --type luks ${mount_point}/linux.img usbkey
+      mount /dev/mapper/usbkey ${mount_point}/image
+      # Read and store all SSH keys
+      for key in `ls ${mount_point}/image/*_rsa`
+      do
+        logger -t usbkey "Adding SSH identity '$key' for '$user' [${timeout} min limit]..."
+        /bin/su - ${user} -c "keychain --timeout ${timeout} ${key}"
+        if [ $debug -eq 1 ]; then
+          logger -t usbkey "[DEBUG] cmd: 'keychain --timeout ${timeout} ${key}'"
+          eval_out=`/bin/su - ${user} -c "keychain --eval"`
+          logger -t usbkey "[DEBUG] keychain eval: $eval_out"
+          ident_out=`/bin/su - ${user} -c "ssh-add -l" | tr '\n' ';'`
+          logger -t usbkey "[DEBUG] ssh-agent identities: $ident_out"
+        fi
+      done
+      # Unmount and close the LUKS device
+      logger -t usbkey "Unmounting / closing encrypted device..."
+      umount ${mount_point}/image
+      cryptsetup close usbkey
+    else
+      logger -t usbkey "GPG key doesn't verify for user ${user}!!"
+    fi
+    
+    # For additional safety, this device will be ejected if the root of the
+    # file system has a file named EJECT present. Delete this (from another
+    # computer) if you need to operate on the keys.
+    if [ -f "${mount_point}/EJECT" ]; then
+      # Unmount temp mount point
+      umount ${mount_point}
+      # Eject device (also prevents automount by file manager)
+      # NOTE: we are assuming the device name will be consistent to current
+      #   naming as a kernel device (sdXY)
+      device=$(echo $2| cut -c 1-3)
+      logger -t usbkey "Ejecting ${device}..."
+      eject $2
+    fi
+  ;;
+esac
