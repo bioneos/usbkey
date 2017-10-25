@@ -32,24 +32,33 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# Check for cryptsetup
+check_cryptsetup=`which cryptsetup`
+if [[ -z $check_crypsetup ]]; then
+  echo
+  echo "Cannot continue without cryptsetup..."
+#  exit 1
+fi
+
 # Read the target user from the command line
 echo -n "Enter target workstation username> "
 read user
 echo
 echo "Creating USBkey for '$user':"
 echo "====="
-# Check for a GPG secret key
-check_gpg_secret=`su - $user -c "gpg --list-secret-keys"`
-if [[ -z $check_gpg_secret ]]; then
-  echo "No GPG keys exist. Follow the next instructions to create one:"
-  echo
-  # Generate a secret key
-  su $user -c "gpg --gen-key"
-fi
 
 # Get the email for the GPG key
 echo -n "Please enter the email address for your GPG key we should use> "
 read email
+
+# Check for a GPG secret key
+check_gpg_secret=`su - $user -c "gpg --list-secret-key $email"`
+if [[ -z $check_gpg_secret ]]; then
+  echo
+  echo "No GPG secret keys exist for '$email'. Please create the key first..."
+  # Cannot continue
+  exit 2
+fi
 
 # Create loopback device (1GB)
 echo "Creating file for encypted image..."
