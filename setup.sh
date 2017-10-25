@@ -87,18 +87,18 @@ printf $pass | cryptsetup open --type luks linux.img usbkey
 mkfs.ext4 /dev/mapper/usbkey
 
 # Create SSH keys
-echo "Creating SSH keys [secure, server, workstation]"
+echo "Creating SSH keys [secure, server, workstation]..."
 mkdir -p image/
 mount /dev/mapper/usbkey image/
-ssh-keygen -t rsa -b 4096 -C "$user@bioneos.com(secure)" -f image/secure_rsa
-ssh-keygen -t rsa -C "$user@bioneos.com(server)" -f image/server_rsa
-ssh-keygen -t rsa -C "$user@bioneos.com(workstation)" -f image/workstation_rsa
+ssh-keygen -N '' -t rsa -b 4096 -C "$user@bioneos.com(secure)" -f image/secure_rsa
+ssh-keygen -N '' -t rsa -C "$user@bioneos.com(server)" -f image/server_rsa
+ssh-keygen -N '' -t rsa -C "$user@bioneos.com(workstation)" -f image/workstation_rsa
 chown $user image/*
 umount image/
 cryptsetup close usbkey
 
 # Create secret
-echo "Creating the stored secret. Please enter your GPG UserID for your private key:"
+echo "Creating the stored secret..."
 su $user -c "echo \"$pass\" | gpg --encrypt -o /tmp/$user.gpg -r $email"
 mv /tmp/$user.gpg .
 
@@ -113,8 +113,10 @@ if [[ $check_secret -eq 0 ]]; then
   # Create EJECT indicator
   echo > ${mount_point}/EJECT
   # All Done!
+  echo
   echo "Completed setup!!"
 else
+  echo
   echo "Done... but secret failed to decrypt or open encrypted partition."
   echo
   echo "** Review the setup before attempting to use **"
