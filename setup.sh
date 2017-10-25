@@ -5,9 +5,10 @@
 # USB Key based SSH key management
 #
 # DEPENDENCIES
-# 'ssh-askpass-fullscreen' : Used to get the encryption password
-# 'cryptosetup' : Used to create the LUKS encrypted file
-# 'ssh-keygen'  : Used for SSH key generation
+# 'cryptosetup' : Used to create the LUKS encrypted file.
+# 'ssh-keygen'  : Used for SSH key generation.
+# 'gpg'         : Used to save the LUKS secret passphrase, to verify the USBkey
+#                 identity on insertion, and avoid handling unknown data.
 #
 # AUTHORS
 #   Steven Davis <sgdavis@bioneos.com> 
@@ -62,7 +63,7 @@ fi
 
 # Create loopback device (1GB)
 echo "Creating file for encypted image..."
-dd if=/dev/zero of=linux.img bs=1 count=0 seek=100M
+fallocate -l 100M linux.img
 
 # Prompt for encryption passphrase
 pass="none"
