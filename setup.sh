@@ -99,7 +99,7 @@ cryptsetup close usbkey
 
 # Create secret
 echo "Creating the stored secret. Please enter your GPG UserID for your private key:"
-su $user -c "echo $pass | gpg --encrypt -o /tmp/$user.gpg -r $email"
+su $user -c "echo \"$pass\" | gpg --encrypt -o /tmp/$user.gpg -r $email"
 mv /tmp/$user.gpg .
 
 # Verify secret
