@@ -31,16 +31,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# Constants
+debug=0
+mount_point=/tmp/usbkey
+usbkey_root=".usbkey"
+usbkey_keyfile="$usbkey_root/key"
+# Key lifespan (in minutes)
+timeout=720
 
-# Common variables
+# Get the target username (running X)
+# NOTE: This could fail if there is more than a single session running...
 logger -t usbkey "Executing 'usbkey-ctl $1' for $(whoami) [$2]"
 supported_sessions="xfce4-session|gnome-session|lxsession|kded4|cinnamon-session"
 user=`ps -A -o user,comm |grep -E "(?${supported_sessions})"| awk '{print $1}'`
-debug=0
-# Constants
-mount_point=/tmp/usbkey
-# Key lifespan (in minutes)
-timeout=720
+eval userhome=$(printf "~%q" $user)
 
 # Necessary for running
 mkdir -p ${mount_point}
@@ -71,7 +75,9 @@ case "$1" in
     elif [[ -n $check_kde ]]; then
       desktop=kde
     fi
-    if [ $debug -eq 1 ]; then logger -t usbkey "[DEBUG] Locking screen for $user [Desktop: $desktop]..."; fi
+    if [ $debug -eq 1 ]; then 
+      logger -t usbkey "[DEBUG] Locking screen for $user [Desktop: $desktop]..."
+    fi
 
     # Lock the screen appropriately
     if [ -n ${user} -a -n ${desktop} -a $debug -eq 0 ]
@@ -99,38 +105,34 @@ case "$1" in
   # Process to when usbkey is inserted:
   # 1) find user running the current X session (above)
   # 2) mount usbkey media
-  # 3) decrypt /${mount_point}/${user}.gpg to get secret key for LUKS device
+  # 3) decrypt LUKS device 
   #   If successful:
-  # 4) decrypt LUKS device 
-  # 6) mount decrypted image
-  # 7) add all keys from decrypted image
-  # 8) umount decrypted image
-  # 9) close LUKS device
-  # 10) unmount / eject usbkey
+  # 4) mount decrypted image
+  # 5) add all keys from decrypted image
+  # 6) umount decrypted image
+  # 7) close LUKS device
+  # 8) unmount / eject usbkey
   inserted)
     # Mount usbkey media
     mount /dev/$2 ${mount_point}
-    # Decrypt the secret
-    #   (this must be gpg encrypted with ${user}'s key, should contain the LUKS secret)
-    secret=$(/bin/su ${user} -c "gpg --decrypt /tmp/usbkey/${user}.gpg")
-    gpg_check=$?
+    # Decrypt the LUKS image using the keyfile
+    cryptsetup open --type luks --key-file $userhome/$usbkey_keyfile ${mount_point}/linux.img usbkey
 
     # Unlock only if a successful decryption occurred
-    if [ -n ${user} -a -n ${secret} -a ${gpg_check} -eq 0 ]
+    if [ -b /dev/mapper/usbkey ]
     then
       # Begin SSH key management
       logger -t usbkey "Found approved usbkey for ${user}..."
       # Open and mount the LUKS device
-      logger -t usbkey "Opening / mounting encrypted device..."
-      echo ${secret} | cryptsetup open --type luks ${mount_point}/linux.img usbkey
+      logger -t usbkey "Mounting encrypted device..."
       mount /dev/mapper/usbkey ${mount_point}/image
       # Read and store all SSH keys
       for key in `ls ${mount_point}/image/*_rsa`
       do
         logger -t usbkey "Adding SSH identity '$key' for '$user' [${timeout} min limit]..."
-        /bin/su - ${user} -c "keychain --timeout ${timeout} ${key}"
+        /bin/su - ${user} -c "keychain -q --timeout ${timeout} ${key}"
         if [ $debug -eq 1 ]; then
-          logger -t usbkey "[DEBUG] cmd: 'keychain --timeout ${timeout} ${key}'"
+          logger -t usbkey "[DEBUG] cmd: 'keychain -q --timeout ${timeout} ${key}'"
           eval_out=`/bin/su - ${user} -c "keychain --eval"`
           logger -t usbkey "[DEBUG] keychain eval: $eval_out"
           ident_out=`/bin/su - ${user} -c "ssh-add -l" | tr '\n' ';'`
@@ -142,13 +144,13 @@ case "$1" in
       umount ${mount_point}/image
       cryptsetup close usbkey
     else
-      logger -t usbkey "GPG key doesn't verify for user ${user}!!"
+      logger -t usbkey "USBkey device inserted, but keyfile for ${user} failed to decrypt!!"
     fi
     
     # For additional safety, this device will be ejected if the root of the
-    # file system has a file named EJECT present. Delete this (from another
-    # computer) if you need to operate on the keys.
-    if [ -f "${mount_point}/EJECT" ]; then
+    # user has a file named EJECT present in 'usbkey_root'. Delete this file
+    # if you need to operate on the USB device for some reason.
+    if [ -f "$userhome/$usbkey_root/EJECT" ]; then
       # Unmount temp mount point
       umount ${mount_point}
       # Eject device (also prevents automount by file manager)

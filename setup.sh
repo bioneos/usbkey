@@ -5,10 +5,8 @@
 # USB Key based SSH key management
 #
 # DEPENDENCIES
-# 'cryptosetup' : Used to create the LUKS encrypted file.
+# 'cryptsetup' : Used to create the LUKS encrypted file.
 # 'ssh-keygen'  : Used for SSH key generation.
-# 'gpg'         : Used to save the LUKS secret passphrase, to verify the USBkey
-#                 identity on insertion, and avoid handling unknown data.
 #
 # AUTHORS
 #   Steven Davis <sgdavis@bioneos.com> 
@@ -33,60 +31,91 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# Adjust as needed:
+usbkey_install="/usr/local/usbkey/"
+usbkey_osx_support="osx-setup.sh"
+usbkey_image="linux.img"
+usbkey_root=".usbkey"
+usbkey_keyfile="$usbkey_root/key"
+
 # Check for cryptsetup
 check_cryptsetup=`which cryptsetup`
-if [[ -z $check_crypsetup ]]; then
+if [[ -z $check_cryptsetup ]]; then
   echo
-  echo "Cannot continue without cryptsetup..."
-#  exit 1
+  echo "Cannot continue without 'cryptsetup' (are you root?)..."
+  exit 1
 fi
 
 # Read the target user from the command line
-echo -n "Enter target workstation username> "
-read user
+user=""
+userhome=""
+until [[ -n $user ]] && [[ -d $userhome ]]; do
+  echo -n "Target workstation username? "
+  read user
+
+  # Test for valid username
+  id "$user" 1>/dev/null 2>&1
+  if [[ $? -ne 0 ]]; then
+    echo "User '$user' not found!"
+    user=""
+  fi
+
+  # Get the user's home account
+  eval userhome=$(printf "~%q" $user)
+done
 echo
 echo "Creating USBkey for '$user':"
 echo "====="
 
-# Get the email for the GPG key
-echo -n "Please enter the email address for your GPG key we should use> "
-read email
-
-# Check for a GPG secret key
-check_gpg_secret=`su - $user -c "gpg --list-secret-key $email"`
-if [[ -z $check_gpg_secret ]]; then
-  echo
-  echo "No GPG secret keys exist for '$email'. Please create the key first..."
-  # Cannot continue
-  exit 2
-fi
-
-# Create loopback device (1GB)
+# Create loopback device (100MB)
 echo "Creating file for encypted image..."
-fallocate -l 100M linux.img
+fallocate -l 100M $usbkey_image
 
-# Prompt for encryption passphrase
-pass="none"
-pass_check=""
-until [[ $pass == $pass_check ]]; do
-  echo -n "Enter the password for the encrypted image (Will not echo)> "
-  read -s pass
-  echo
-  echo -n "Again> "
-  read -s pass_check
-  echo
-  if [[ $pass != $pass_check ]]; then echo "Doesn't match!"; fi
-done
+# Create secret
+echo "Creating the stored secret ($usbkey_keyfile)..."
+mkdir -p $userhome/$usbkey_root
+dd bs=512 count=4 if=/dev/urandom of=$userhome/$usbkey_keyfile
+chmod 400 $userhome/$usbkey_keyfile
+chmod 700 $userhome/$usbkey_root
+chown $user -R $userhome/$usbkey_root
+echo
+echo "** NOTE: Remember to keep this file secret!! **"
+echo "** If it is compromised, delete it and issue new keys **"
+echo
 
-# Prompt for encryption password
+# Format the device using the keyfile first
 echo "Formatting device..."
-printf $pass | cryptsetup luksFormat linux.img -
+cryptsetup -q luksFormat $usbkey_image $userhome/$usbkey_keyfile
+
+# Determine if we will add a passphrase as well
+echo -n "Would you like to use a passphrase as well (y/N)? "
+read create_passphrase
+if [[ $create_passphrase == "y" ]] || [[ $create_passphrase == "Y" ]]; then
+  # Prompt for encryption passphrase
+  pass="none"
+  pass_check=""
+  until [[ $pass == $pass_check ]]; do
+    echo -n "  Password for the encrypted image (Will not echo)? "
+    read -s pass
+    echo
+    echo -n "  Again? "
+    read -s pass_check
+    echo
+    if [[ $pass != $pass_check ]]; then echo "    Doesn't match!"; fi
+  done
+
+  # Adding passphrase
+  printf $pass | cryptsetup luksAddKey --key-file $userhome/$usbkey_keyfile $usbkey_image -
+fi
 
 # Open encrypted image, and format filesystem
 echo "Creating a file system"...
-printf $pass | cryptsetup open --type luks linux.img usbkey
+cryptsetup open --type luks --key-file $userhome/$usbkey_keyfile $usbkey_image usbkey
 mkfs.ext4 /dev/mapper/usbkey
 
+# Add the OSX support?
+echo -n "Would you like to add OSX support as well (y/N)? "
+read support_osx
 # Create SSH keys
 echo "Creating SSH keys [secure, server, workstation]..."
 mkdir -p image/
@@ -95,30 +124,25 @@ ssh-keygen -N '' -t rsa -b 4096 -C "$user@bioneos.com(secure)" -f image/secure_r
 ssh-keygen -N '' -t rsa -C "$user@bioneos.com(server)" -f image/server_rsa
 ssh-keygen -N '' -t rsa -C "$user@bioneos.com(workstation)" -f image/workstation_rsa
 chown $user image/*
+
+# Create setup for OSX if desired
+if [[ $support_osx == "y" ]] || [[ $support_osx == "Y" ]]; then
+  cp image/* .
+  cp $usbkey_install/$usbkey_osx_support .
+  echo
+  echo "** NOTE: additional setup using an OSX device is required **"
+  echo " A duplicate of the SSH keys are stored on this drive, unencrypted."
+  echo " This should be considered unsafe until you run the '$usbkey_osx_support' scrupt."
+  echo " to setup your OSX passphrase and complete the setup.."
+  echo
+fi
 umount image/
 cryptsetup close usbkey
 
-# Create secret
-echo "Creating the stored secret..."
-su $user -c "echo \"$pass\" | gpg --encrypt -o /tmp/$user.gpg -r $email"
-mv /tmp/$user.gpg .
+# Create EJECT indicator
+touch $userhome/$usbkey_root/EJECT
+chown $user $userhome/$usbkey_root/EJECT
 
-# Verify secret
-secret=$(/bin/su ${user} -c "gpg --decrypt ${user}.gpg")
-printf $secret | cryptsetup open --type luks linux.img usbkey
-check_secret=$?
-cryptsetup close usbkey
+# All Done!
 echo
-echo
-if [[ $check_secret -eq 0 ]]; then
-  # Create EJECT indicator
-  echo > ${mount_point}/EJECT
-  # All Done!
-  echo
-  echo "Completed setup!!"
-else
-  echo
-  echo "Done... but secret failed to decrypt or open encrypted partition."
-  echo
-  echo "** Review the setup before attempting to use **"
-fi
+echo "Completed setup!!"
