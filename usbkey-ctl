@@ -35,6 +35,7 @@
 debug=0
 mount_point=/tmp/usbkey
 usbkey_root=".usbkey"
+usbkey_setup="setup.sh"
 usbkey_keyfile="$usbkey_root/key"
 # Key lifespan (in minutes)
 timeout=720
@@ -142,6 +143,9 @@ case "$1" in
 
     # Determine if we need to setup this USBkey
     if [[ -f ${mount_point}/${usbkey_setup} ]]; then
+      if [ $debug -eq 1 ]; then 
+        logger -t usbkey "[DEBUG] USBkey inserted. Running first time setup script..."
+      fi
       ${mount_point}/${usbkey_setup} ${mount_point} ${user}
       if [[ $? -ne 0 ]]; then
         logger -t usbkey "Setup for new USBkey failed..."
