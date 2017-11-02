@@ -1,0 +1,129 @@
+#!/bin/bash
+
+###
+# Setup script for "usbkey"
+# USB Key based SSH key management
+#
+# DEPENDENCIES
+# 'cryptsetup' : Used to create the LUKS encrypted file.
+# 'ssh-keygen'  : Used for SSH key generation.
+#
+# AUTHORS
+#   Steven Davis <sgdavis@bioneos.com> 
+#   Bio::Neos, Inc. <http://bioneos.com/>
+#
+# LICENSE
+# Permission is hereby granted, free of charge, to any person obtaining a copy 
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# Adjust as needed:
+usbkey_install="/usr/local/usbkey/"
+usbkey_setup="setup.sh"
+usbkey_osx_setup="osx-setup.sh"
+usbkey_image="linux.img"
+usbkey_keyfile="key"
+
+# Check for cryptsetup
+check_cryptsetup=`which cryptsetup`
+if [[ -z $check_cryptsetup ]]; then
+  echo
+  echo "Cannot continue without 'cryptsetup' (are you root?)..."
+  exit 1
+fi
+
+# Read the target user from the command line
+user=""
+echo -n "Target workstation username? "
+read user
+
+echo
+echo "Creating USBkey for '$user':"
+echo "====="
+
+# Create username indicator
+touch $user
+
+# Create loopback device (100MB)
+echo "Creating file for encypted image..."
+fallocate -l 100M $usbkey_image
+
+# Create secret
+echo "Creating the stored secret ($usbkey_keyfile)..."
+dd bs=512 count=4 if=/dev/urandom of=$usbkey_keyfile
+echo
+echo "** NOTE: Run the workstation setup as soon as possible to safeguard these keys!! **"
+echo
+
+# Format the device using the keyfile first
+echo "Formatting device..."
+cryptsetup -q luksFormat $usbkey_image $usbkey_keyfile
+mkdir -p image/
+
+# Determine if we will add a passphrase as well
+echo -n "Would you like to use a passphrase as well (y/N)? "
+read create_passphrase
+if [[ $create_passphrase == "y" ]] || [[ $create_passphrase == "Y" ]]; then
+  # Prompt for encryption passphrase
+  pass="none"
+  pass_check=""
+  until [[ $pass == $pass_check ]]; do
+    echo -n "  Password for the encrypted image (Will not echo)? "
+    read -s pass
+    echo
+    echo -n "  Again? "
+    read -s pass_check
+    echo
+    if [[ $pass != $pass_check ]]; then echo "    Doesn't match!"; fi
+  done
+
+  # Adding passphrase
+  printf $pass | cryptsetup luksAddKey --key-file $usbkey_keyfile $usbkey_image -
+fi
+
+# Open encrypted image, and format filesystem
+echo "Creating a file system..."
+cryptsetup open --type luks --key-file $usbkey_keyfile $usbkey_image usbkey
+mkfs.ext4 /dev/mapper/usbkey
+
+# Add the OSX support?
+echo -n "Would you like to add OSX support as well (y/N)? "
+read support_osx
+# Create SSH keys
+echo "Creating SSH keys [secure, server, workstation]..."
+ssh-keygen -N '' -t rsa -b 4096 -C "$user@bioneos.com(secure)" -f secure_rsa
+ssh-keygen -N '' -t rsa -C "$user@bioneos.com(server)" -f server_rsa
+ssh-keygen -N '' -t rsa -C "$user@bioneos.com(workstation)" -f workstation_rsa
+
+echo "Creating setup script for first run..."
+cp $usbkey_install/$usbkey_setup .
+
+# Create setup for OSX if desired
+if [[ $support_osx == "y" ]] || [[ $support_osx == "Y" ]]; then
+  cat $usbkey_install/$usbkey_osx_setup | sed "s/#--#//g" > ./$usbkey_osx_setup
+  echo
+  echo "** NOTE: additional setup using an OSX device is required **"
+  echo " You must insert this USBkey into the target workstation first, or else the OSX"
+  echo " setup will abort."
+  echo " This USBkey should be considered unprotected until both setup steps are completed."
+  echo
+fi
+cryptsetup close usbkey
+
+# All Done!
+echo
+echo "Completed setup!!"

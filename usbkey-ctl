@@ -56,6 +56,9 @@ case "$1" in
   # 2) lock screen (desktop specific)
   # 3) clear all keys from ssh-agent
   removed)
+    # cryptsetup --test-passphrase?
+    # TODO
+
     # Determine what desktop we are looking at
     check_gnome=$(ps -aux | awk '{print $11}' | grep gnome-session)
     if [[ -n $check_gnome ]]; then
@@ -103,26 +106,45 @@ case "$1" in
     /bin/su - ${user} -c "ssh-add -D" 
   ;;
   # Process to when usbkey is inserted:
-  # 1) find user running the current X session (above)
-  # 2) mount usbkey media
-  # 3) decrypt LUKS device 
-  #   If successful:
-  # 4) mount decrypted image
-  # 5) add all keys from decrypted image
-  # 6) umount decrypted image
-  # 7) close LUKS device
-  # 8) unmount / eject usbkey
+  #   1) find user running the current X session (above)
+  #   First run: 
+  #     1) setup script
+  #     2) remove setup script
+  #     Continue with a normal run...
+  #   Normal run:
+  #     1) mount usbkey media
+  #     2) decrypt LUKS device 
+  #       If successful:
+  #     3) mount decrypted image
+  #     4) add all keys from decrypted image
+  #     5) umount decrypted image
+  #     6) close LUKS device
+  #       Finally:
+  #     7) unmount / eject usbkey
   inserted)
     # Mount usbkey media
     mount /dev/$2 ${mount_point}
+
+    # Determine if we need to setup this USBkey
+    if [[ -f ${mount_point}/${usbkey_setup} ]]; then
+      ${mount_point}/${usbkey_setup} ${mount_point} ${user}
+      if [[ $? -ne 0 ]]; then
+        logger -t usbkey "Setup for new USBkey failed..."
+        exit 1
+      else
+        logger -t usbkey "Setup for new USBkey completed successfully..."
+        rm ${mount_point}/${usbkey_setup}
+      fi
+    fi
+
     # Decrypt the LUKS image using the keyfile
-    cryptsetup open --type luks --key-file $userhome/$usbkey_keyfile ${mount_point}/linux.img usbkey
+    cryptsetup open --type luks --key-file ${userhome}/${usbkey_keyfile} ${mount_point}/linux.img usbkey
 
     # Unlock only if a successful decryption occurred
     if [ -b /dev/mapper/usbkey ]
     then
       # Begin SSH key management
-      logger -t usbkey "Found approved usbkey for ${user}..."
+      logger -t usbkey "Found approved USBkey for ${user}..."
       # Open and mount the LUKS device
       logger -t usbkey "Mounting encrypted device..."
       mount /dev/mapper/usbkey ${mount_point}/image
@@ -145,12 +167,13 @@ case "$1" in
       cryptsetup close usbkey
     else
       logger -t usbkey "USBkey device inserted, but keyfile for ${user} failed to decrypt!!"
+      su $user -c "DISPLAY=:0 notify-send -u critical \"USBkey inserted, but failed to decrypt...\""
     fi
     
     # For additional safety, this device will be ejected if the root of the
     # user has a file named EJECT present in 'usbkey_root'. Delete this file
     # if you need to operate on the USB device for some reason.
-    if [ -f "$userhome/$usbkey_root/EJECT" ]; then
+    if [ -f "${userhome}/${usbkey_root}/EJECT" ]; then
       # Unmount temp mount point
       umount ${mount_point}
       # Eject device (also prevents automount by file manager)
