@@ -79,20 +79,15 @@ echo -n "Would you like to use a passphrase as well (y/N)? "
 read create_passphrase
 if [[ $create_passphrase == "y" ]] || [[ $create_passphrase == "Y" ]]; then
   # Prompt for encryption passphrase
-  pass="none"
-  pass_check=""
-  until [[ $pass == $pass_check ]]; do
-    echo -n "  Password for the encrypted image (Will not echo)? "
-    read -s pass
-    echo
-    echo -n "  Again? "
-    read -s pass_check
-    echo
-    if [[ $pass != $pass_check ]]; then echo "    Doesn't match!"; fi
+  set_passphrase="y"
+  until [[ $set_passphrase != "y" ]] && [[ $set_passphrase != "Y" ]]; do
+    cryptsetup luksAddKey --key-file $usbkey_keyfile $usbkey_image
+    if [[ $? -ne 0 ]]; then 
+      echo
+      echo -n "  Try again (y/N)? "
+      read $set_passphrase
+    fi
   done
-
-  # Adding passphrase
-  printf $pass | cryptsetup luksAddKey --key-file $usbkey_keyfile $usbkey_image -
 fi
 
 # Open encrypted image, and format filesystem
