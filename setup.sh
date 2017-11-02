@@ -67,8 +67,8 @@ if [[ $? -ne 0 ]]; then
 fi
 cp $usbkey_media/*_rsa* $usbkey_media/image/
 chown $user $usbkey_media/image/*
-chmod 400 $usbkey_media/*_rsa
-chmod 644 $usbkey_media/*_rsa.pub
+chmod 400 $usbkey_media/image/*_rsa
+chmod 644 $usbkey_media/image/*_rsa.pub
 
 # Remove the keys (unless targeting OSX as well)
 completed=0
