@@ -65,9 +65,6 @@ fallocate -l 100M $usbkey_image
 # Create secret
 echo "Creating the stored secret ($usbkey_keyfile)..."
 dd bs=512 count=4 if=/dev/urandom of=$usbkey_keyfile
-echo
-echo "** NOTE: Run the workstation setup as soon as possible to safeguard these keys!! **"
-echo
 
 # Format the device using the keyfile first
 echo "Formatting device..."
@@ -103,6 +100,10 @@ echo "Creating SSH keys [secure, server, workstation]..."
 ssh-keygen -N '' -t rsa -b 4096 -C "$user@bioneos.com(secure)" -f secure_rsa
 ssh-keygen -N '' -t rsa -C "$user@bioneos.com(server)" -f server_rsa
 ssh-keygen -N '' -t rsa -C "$user@bioneos.com(workstation)" -f workstation_rsa
+
+echo
+echo "** NOTE: Run the workstation setup as soon as possible to safeguard these keys!! **"
+echo
 
 echo "Creating setup script for first run..."
 cp $usbkey_install/$usbkey_setup .
