@@ -50,7 +50,7 @@ logger -t usbkey "Installing USBkey for '$user'"
 # Create secret
 logger -t usbkey "Saving the stored secret: $userhome/$usbkey_root/$usbkey_keyfile"
 mkdir -p $userhome/$usbkey_root
-mv $usbkey_media/$usbkey_keyfile $userhome/$usbkey_root/
+cp $usbkey_media/$usbkey_keyfile $userhome/$usbkey_root/
 chmod 400 $userhome/$usbkey_root/$usbkey_keyfile
 chmod 700 $userhome/$usbkey_root
 chown -R $user $userhome/$usbkey_root
