@@ -61,6 +61,9 @@ logger -t usbkey "Safely storing SSH keys"
 cryptsetup open --type luks --key-file $userhome/$usbkey_root/$usbkey_keyfile $usbkey_media/$usbkey_image usbkey
 mount /dev/mapper/usbkey $usbkey_media/image
 cp $usbkey_media/*_rsa* $usbkey_media/image/
+chown $user $usbkey_media/image/*
+chmod 400 $usbkey_media/*_rsa
+chmod 644 $usbkey_media/*_rsa.pub
 
 # Remove the keys (unless targeting OSX as well)
 completed=0
