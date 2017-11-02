@@ -100,7 +100,7 @@ case "$1" in
     fi
 
     # Lock the screen appropriately
-    if [ -n ${user} -a -n ${desktop} -a $debug -eq 0 ]
+    if [ -n ${user} -a -n ${desktop} ]
     then
       case $desktop in
         gnome)
