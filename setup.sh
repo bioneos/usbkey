@@ -30,6 +30,7 @@
 # SOFTWARE.
 
 usbkey_root=".usbkey"
+usbkey_image="linux.img"
 usbkey_keyfile="key"
 usbkey_osx_setup="osx-setup.sh"
 
@@ -60,6 +61,10 @@ shred -n 7 -u $usbkey_media/$usbkey_keyfile
 logger -t usbkey "Safely storing SSH keys"
 cryptsetup open --type luks --key-file $userhome/$usbkey_root/$usbkey_keyfile $usbkey_media/$usbkey_image usbkey
 mount /dev/mapper/usbkey $usbkey_media/image
+if [[ $? -ne 0 ]]; then
+  logger -t usbkey "USBkey encrypted image failed to mount?"
+  exit 1
+fi
 cp $usbkey_media/*_rsa* $usbkey_media/image/
 chown $user $usbkey_media/image/*
 chmod 400 $usbkey_media/*_rsa
