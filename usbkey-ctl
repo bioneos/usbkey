@@ -36,7 +36,8 @@ debug=0
 mount_point=/tmp/usbkey
 usbkey_root=".usbkey"
 usbkey_setup="setup.sh"
-usbkey_keyfile="$usbkey_root/key"
+usbkey_image="linux.img"
+usbkey_keyfile="key"
 # Key lifespan (in minutes)
 timeout=720
 
@@ -157,7 +158,7 @@ case "$1" in
     fi
 
     # Decrypt the LUKS image using the keyfile
-    cryptsetup open --type luks --key-file ${userhome}/${usbkey_keyfile} ${mount_point}/linux.img usbkey
+    cryptsetup open --type luks --key-file ${userhome}/${usbkey_root}/${usbkey_keyfile} ${mount_point}/${usbkey_image} usbkey
 
     # Unlock only if a successful decryption occurred
     if [ -b /dev/mapper/usbkey ]
