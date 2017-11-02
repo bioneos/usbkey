@@ -164,10 +164,12 @@ case "$1" in
       logger -t usbkey "Mounting encrypted device..."
       mount /dev/mapper/usbkey ${mount_point}/image
       # Read and store all SSH keys
+      count=0
       for key in `ls ${mount_point}/image/*_rsa`
       do
         logger -t usbkey "Adding SSH identity '$key' for '$user' [${timeout} min limit]..."
         /bin/su - ${user} -c "keychain -q --timeout ${timeout} ${key}"
+        count=$((count+1))
         if [ $debug -eq 1 ]; then
           logger -t usbkey "[DEBUG] cmd: 'keychain -q --timeout ${timeout} ${key}'"
           eval_out=`/bin/su - ${user} -c "keychain --eval"`
@@ -183,6 +185,8 @@ case "$1" in
 
       # Create insertion hint
       touch ${userhome}/${usbkey_root}/INSERTED
+
+      su $user -c "DISPLAY=:0 notify-send \"USBkey inserted, $count identities added...\""
     else
       logger -t usbkey "USBkey device inserted, but keyfile for ${user} failed to decrypt!!"
       su $user -c "DISPLAY=:0 notify-send -u critical \"USBkey inserted, but failed to decrypt...\""
