@@ -82,7 +82,7 @@ if [[ $create_passphrase == "y" ]] || [[ $create_passphrase == "Y" ]]; then
     if [[ $? -ne 0 ]]; then 
       echo
       echo -n "  Try again (y/N)? "
-      read $set_passphrase
+      read set_passphrase
     else
       set_passphrase=""
     fi
