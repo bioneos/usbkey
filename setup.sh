@@ -37,7 +37,7 @@ usbkey_osx_setup="osx-setup.sh"
 usbkey_media=$1
 user=$2
 
-if [[ ! -f $user ]]; then
+if [[ ! -f $usbkey_media/$user ]]; then
   su $user -c "DISPLAY=:0 notify-send -u critical \"** This USBkey was intended for a different user!! **(If you don't think this is correct: rename the target user file)\""
   exit 1
 fi
