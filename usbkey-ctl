@@ -41,10 +41,16 @@ timeout=720
 
 # Get the target username (running X)
 # NOTE: This could fail if there is more than a single session running...
-logger -t usbkey "Executing 'usbkey-ctl $1' for $(whoami) [$2]"
 supported_sessions="xfce4-session|gnome-session|lxsession|kded4|cinnamon-session"
 user=`ps -A -o user,comm |grep -E "(?${supported_sessions})"| awk '{print $1}'`
+logger -t usbkey "Executing 'usbkey-ctl $1' for $user [$2]"
 eval userhome=$(printf "~%q" $user)
+
+# Make sure we found a user
+if [[ -z $user ]]; then
+  logger -t usbkey "Cannot find a supported X session running. Exiting without doing anything..."
+  exit 1
+fi
 
 # Necessary for running
 mkdir -p ${mount_point}
@@ -52,12 +58,21 @@ mkdir -p ${mount_point}
 # Determine operating mode
 case "$1" in
   # Process when usbkey is removed:
+  # 1) Look for ${userhome}/INSERTED
+  #   If missing: 
+  # exit immediately
+  #   If exists:
   # 1) Find the running X desktop
   # 2) lock screen (desktop specific)
   # 3) clear all keys from ssh-agent
   removed)
-    # cryptsetup --test-passphrase?
-    # TODO
+    # Look for insertion hint
+    if [[ ! -f ${userhome}/${usbkey_root}/INSERTED ]]; then
+      logger -t usbkey "USBkey removed, but no insertion hint present. Exiting without clearing/locking..."
+      exit
+    else
+      rm ${userhome}/${usbkey_root}/INSERTED
+    fi
 
     # Determine what desktop we are looking at
     check_gnome=$(ps -aux | awk '{print $11}' | grep gnome-session)
@@ -165,6 +180,9 @@ case "$1" in
       logger -t usbkey "Unmounting / closing encrypted device..."
       umount ${mount_point}/image
       cryptsetup close usbkey
+
+      # Create insertion hint
+      touch ${userhome}/${usbkey_root}/INSERTED
     else
       logger -t usbkey "USBkey device inserted, but keyfile for ${user} failed to decrypt!!"
       su $user -c "DISPLAY=:0 notify-send -u critical \"USBkey inserted, but failed to decrypt...\""
