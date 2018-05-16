@@ -44,7 +44,7 @@ timeout=720
 # Get the target username (running X)
 # NOTE: This could fail if there is more than a single session running...
 supported_sessions="xfce4-session|gnome-session|lxsession|kded4|cinnamon-session"
-user=`ps -A -o user,comm |grep -E "(?${supported_sessions})"| awk '{print $1}'`
+user=`ps -A -o user:25,comm |grep -E "(?${supported_sessions})"| awk '{print $1}'`
 logger -t usbkey "Executing 'usbkey-ctl $1' for $user [$2]"
 eval userhome=$(printf "~%q" $user)
 
