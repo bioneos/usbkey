@@ -77,26 +77,34 @@ case "$1" in
     fi
 
     # Determine what desktop we are looking at
-    check_gnome=$(ps -aux | awk '{print $11}' | grep gnome-session)
-    if [[ -n $check_gnome ]]; then
+    check=$(ps -aux | awk '{print $2,$11}' | \
+      grep -E "(?gnome-session|cinnamon-session|lxsession|xfce4-session|kded4)")
+    check=($check)
+    desktop=${check[1]}
+    pid=${check[0]}
+
+    # Get the dbus and display setting
+    if [[ -n $pid ]]; then
+      dbus=$(cat /proc/$pid/environ | tr \\0 \\n | grep  '^DBUS_SESSION_BUS_ADDRESS=')
+      display=$(cat /proc/$pid/environ | tr \\0 \\n | grep  '^DISPLAY=')
+    fi
+
+    # Transform the desktop name, grab gnome SessionID
+    if [[ $desktop == "gnome-session" ]]; then
       desktop=gnome
       sessionid=`/bin/loginctl list-sessions | grep ${user} | awk '{print $1}'`
-    fi
-    check_cinnamon=$(ps -aux | awk '{print $11}' | grep cinnamon-session)
-    check_lxde=$(ps -aux | awk '{print $11}' | grep lxsession)
-    check_xfce=$(ps -aux | awk '{print $11}' | grep xfce4-session)
-    check_kde=$(ps -aux | awk '{print $11}' | grep kded4)
-    if [[ -n $check_cinnamon ]]; then
+    elif [[ $desktop == "cinnamon-session" ]]; then
       desktop=cinnamon
-    elif [[ -n $check_lxde ]]; then
+    elif [[ $desktop == "lxsession" ]]; then
       desktop=lxde
-    elif [[ -n $check_xfce ]]; then
+    elif [[ $desktop == "xfce4-session" ]]; then
       desktop=xfce
-    elif [[ -n $check_kde ]]; then
+    elif [[ $desktop == "kded4" ]]; then
       desktop=kde
     fi
+
     if [ $debug -eq 1 ]; then 
-      logger -t usbkey "[DEBUG] Locking screen for $user [Desktop: $desktop]..."
+      logger -t usbkey "[DEBUG] Locking screen for $user [Desktop: $desktop, Display: $display, D-Bus: $dbus]..."
     fi
 
     # Lock the screen appropriately
@@ -107,13 +115,13 @@ case "$1" in
           /bin/loginctl lock-session $sessionid
         ;;
         cinnamon)
-          /bin/su ${user} -c "DISPLAY=:0 /usr/bin/cinnamon-screensaver-command -a"
+          /bin/su ${user} -c "$display $dbus /usr/bin/cinnamon-screensaver-command -a"
         ;;
         xfce)
-          /bin/su ${user} -c "DISPLAY=:0 /usr/bin/xflock4"
+          /bin/su ${user} -c "$display $dbus /usr/bin/xflock4"
         ;;
         lxde | kde)
-          /bin/su ${user} -c "DISPLAY=:0 /usr/bin/xscreensaver-command -lock"
+          /bin/su ${user} -c "$display $dbus /usr/bin/xscreensaver-command -lock"
         ;;
       esac
     fi
