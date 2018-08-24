@@ -1,3 +1,4 @@
+SUBSYSTEM=="usb", ACTION=="remove", ENV{PRODUCT}=="781/5571/*", RUN+="/usr/local/bin/usbkey-ctl removed"
 SUBSYSTEM=="usb", ACTION=="remove", ENV{ID_VENDOR_ID}=="0781", ENV{ID_MODEL_ID}=="5571", RUN+="/usr/local/bin/usbkey-ctl removed"
 SUBSYSTEM=="block", ACTION=="add", ENV{ID_VENDOR_ID}=="0781", ENV{ID_MODEL_ID}=="5571", ENV{DEVTYPE}=="partition", ENV{name}="%k", RUN+="/usr/local/bin/usbkey-ctl inserted %E{name}"
 
