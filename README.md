@@ -1,6 +1,6 @@
 # USBKey 
 
-The USBkey system is our internal system for managing remote login keys to minimizing password entry and hopefully increase security for our systems. This system was designed internally after careful thought and research, but without external review or input. **If you would like to provide your comments or suggestions on the system design, we would appreciate the input!** Simply create an [Issue]:(https://github.com/bioneos/usbkey/issues) in this project and detail your thoughts in the description.
+The USBkey system is our internal system for managing remote login keys to minimizing password entry and hopefully increase security for our systems. This system was designed internally after careful thought and research, but without external review or input. **If you would like to provide your comments or suggestions on the system design, we would appreciate the input!** Simply create an [Issue](https://github.com/bioneos/usbkey/issues) in this project and detail your thoughts in the description.
 
 ## Overview
 
@@ -27,7 +27,7 @@ We have full Linux support and partial OS X support at this time. I'd love to ad
 * The keys are secured inside of a LUKS encrypted file after creation, and the old unencrypted copies are `shred` (`rm -P` on OS X)
 * A randomly generated key is placed in the home account of the target user (`/home/<user>/.usbkey/key`) on the target workstation and it is the only way to decrypt the keypairs
 * The `udev` rule (`99-usbkey.rules`) listens for the insertion or removal of a device into the workstation and triggers `usbkey-ctl` as appropriate.
-* During device insertion, the drive is mounted, volume is decrypted, and keypairs are added to the `ssh-agent` using the Funtoo Linux project [keychain]:(https://www.funtoo.org/Keychain). Keys are set to expire in 24 hours just in case.
+* During device insertion, the drive is mounted, volume is decrypted, and keypairs are added to the `ssh-agent` using the Funtoo Linux project [keychain](https://www.funtoo.org/Keychain). Keys are set to expire in 24 hours just in case.
 * During device removal, all keys are removed from the running `ssh-agent` process.
 
 ### Future Work
