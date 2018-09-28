@@ -17,7 +17,25 @@ func shell(_ args: String...) -> Int32 {
     return task.terminationStatus
 }
 
-
+DARegisterDiskDisappearedCallback(
+    session!,
+    nil,
+    { (disk, context) in
+        if let name = DADiskGetBSDName(disk) {
+            let diskinfo = DADiskCopyDescription(disk);
+            
+            let key = "DADeviceModel" as NSString
+            if let rawResult = CFDictionaryGetValue(diskinfo, Unmanaged.passUnretained(key).toOpaque()) {
+                let result = Unmanaged<AnyObject>.fromOpaque(rawResult).takeUnretainedValue() as! String
+                let a = "Cruzer Fit" as String
+                if (result == a) {
+                    print(String(cString: name))
+                    shell("ls")
+                }
+            }
+        }
+    },
+nil)
 
 
 DARegisterDiskAppearedCallback(
@@ -37,8 +55,8 @@ DARegisterDiskAppearedCallback(
                 }
             }
         }
-},
-    nil)
+    },
+nil)
 
 DASessionScheduleWithRunLoop(session!, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
 

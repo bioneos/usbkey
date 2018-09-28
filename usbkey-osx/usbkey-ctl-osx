@@ -1,14 +1,11 @@
 #!/bin/bash
 
 ###
-# usbkey-ctl
-# USB Key based SSH key management
+# usbkey-ctl-osx
+# USB Key based SSH key management (MacOSX version)
 #
-# DEPENDENCIES
-# 'keychain' : For the ssh-agent management that will ensure all shells for the 
-#              same user will share an ssh-agent.
-#            [Keychain project]: https://www.funtoo.org/Keychain
 # AUTHORS
+#   Chibuzo Nwakama <cnwakama@bioneos.com>
 #   Steven Davis <sgdavis@bioneos.com> 
 #   Bio::Neos, Inc. <http://bioneos.com/>
 #
@@ -33,30 +30,18 @@
 
 # Constants
 debug=0
-mount_point=/tmp/usbkey
-usbkey_root=".usbkey"
-usbkey_setup="setup.sh"
-usbkey_image="linux.img"
+mount_point=$(diskutil info ${2} | grep 'Mount Point' | cut -c30-)
+usbkey_root="~/Library/usbkey/"
+usbkey_setup="osx-setup.sh"
+usbkey_image="osx.sparseimage"
 usbkey_keyfile="key"
+alias lockscreen='/System/Library/CoreServices/Menu\ Extras/User.menu/Contents/Resources/CGSession -suspend'
+user=$(id -un)
+
 # Key lifespan (in minutes)
 timeout=720
 
-# Get the target username (running X)
-# NOTE: This could fail if there is more than a single session running...
-
-supported_sessions="xfce4-session|gnome-session|lxsession|kded4|cinnamon-session"
-user=`ps -A -o user:25,comm |grep -E "(?${supported_sessions})"| awk '{print $1}'` #don't know if this code works on or not mac
 logger -t usbkey "Executing 'usbkey-ctl $1' for $user [$2]"
-eval userhome=$(printf "~%q" $user)
-
-# Make sure we found a user
-if [[ -z $user ]]; then
-  logger -t usbkey "Cannot find a supported X session running. Exiting without doing anything..."
-  exit 1
-fi
-
-# Necessary for running
-#mkdir -p ${mount_point}
 
 # Determine operating mode
 case "$1" in
@@ -70,66 +55,21 @@ case "$1" in
   # 3) clear all keys from ssh-agent 
 removed)
     # Look for insertion hint
-    if [[ ! -f ${userhome}/${usbkey_root}/INSERTED ]]; then
+    if [[ ! -f ${usbkey_root}/INSERTED ]]; then
       logger -t usbkey "USBkey removed, but no insertion hint present. Exiting without clearing/locking..."
       exit
     else
-      rm ${userhome}/${usbkey_root}/INSERTED
+      rm ${usbkey_root}/INSERTED
     fi
-
-    # Determine what desktop we are looking at
-    check=$(ps -aux | awk '{print $2,$11}' | \
-      grep -E "(?gnome-session|cinnamon-session|lxsession|xfce4-session|kded4)")
-    check=($check)
-    desktop=${check[1]}
-    pid=${check[0]}
-
-    # Get the dbus and display setting
-    if [[ -n $pid ]]; then
-      dbus=$(cat /proc/$pid/environ | tr \\0 \\n | grep  '^DBUS_SESSION_BUS_ADDRESS=')
-      display=$(cat /proc/$pid/environ | tr \\0 \\n | grep  '^DISPLAY=')
-    fi
-
-    # Transform the desktop name, grab gnome SessionID
-    if [[ $desktop == "gnome-session" ]]; then
-      desktop=gnome
-      sessionid=`/bin/loginctl list-sessions | grep ${user} | awk '{print $1}'`
-    elif [[ $desktop == "cinnamon-session" ]]; then
-      desktop=cinnamon
-    elif [[ $desktop == "lxsession" ]]; then
-      desktop=lxde
-    elif [[ $desktop == "xfce4-session" ]]; then
-      desktop=xfce
-    elif [[ $desktop == "kded4" ]]; then
-      desktop=kde
-    fi
-
-    if [ $debug -eq 1 ]; then 
-      logger -t usbkey "[DEBUG] Locking screen for $user [Desktop: $desktop, Display: $display, D-Bus: $dbus]..."
-    fi
+ 
 
     # Lock the screen appropriately
-    if [ -n ${user} -a -n ${desktop} ]
-    then
-      case $desktop in
-        gnome)
-          /bin/loginctl lock-session $sessionid
-        ;;
-        cinnamon)
-          /bin/su ${user} -c "$display $dbus /usr/bin/cinnamon-screensaver-command -a"
-        ;;
-        xfce)
-          /bin/su ${user} -c "$display $dbus /usr/bin/xflock4"
-        ;;
-        lxde | kde)
-          /bin/su ${user} -c "$display $dbus /usr/bin/xscreensaver-command -lock"
-        ;;
-      esac
-    fi
+    lockscreen
+    
 
     # Clear out the ssh-agent keys
     logger -t usbkey "Removing all SSH identities from the agent for ${user}..."
-    /bin/su - ${user} -c "ssh-add -D" 
+    ssh-add -D 
   ;;
   # Process to when usbkey is inserted:
   #   1) find user running the current X session (above)
@@ -150,16 +90,13 @@ removed)
   inserted)
     # Already mounted in MacOSX
     # Mount usbkey media
-    #mount /dev/$2 ${mount_point}
-
-    mount_point=$(diskutil info disk2s1 | grep 'Mount Point' | cut -c30-)
 
     # Determine if we need to setup this USBkey
     if [[ -f ${mount_point}/${usbkey_setup} ]]; then
       if [ $debug -eq 1 ]; then 
         logger -t usbkey "[DEBUG] USBkey inserted. Running first time setup script..."
       fi
-      ${mount_point}/${usbkey_setup} ${mount_point} ${user}
+      ${mount_point}/${usbkey_setup} 
       if [[ $? -ne 0 ]]; then
         logger -t usbkey "Setup for new USBkey failed..."
         exit 1
@@ -169,32 +106,23 @@ removed)
       fi
     fi
     
-    # Decrypt the encrypted disk image using the keyfile
-    
 
-    # Decrypt the SPARSE image using the keyfile
-    hdiutil attach osx.sparseimage
+    # Decrypt the SPARSE image (using the keyfile)
+    printf '' | hdiutil attach -stdinpass osx.sparseimage 
 
     #hdiutil create -stdinpass -attach -encryption AES-256 -type SPARSE -fs HFS+J -volname usbkey -size 100m "osx"
-    #cryptsetup open --type luks --key-file ${userhome}/${usbkey_root}/${usbkey_keyfile} ${mount_point}/${usbkey_image} usbkey
 
     # Unlock only if a successful decryption occurred
-    if [ -b /dev/mapper/usbkey ]
+    if [[ -f /Volume/usbkey ]]
     then
       # Begin SSH key management
       logger -t usbkey "Found approved USBkey for ${user}..."
-      # Open and mount the LUKS device
-      logger -t usbkey "Mounting encrypted device..."
-      #mount_point=$(diskutil info disk2s1 | grep 'Mount Point' | cut -c30-)
       
-      #mount /dev/mapper/usbkey ${mount_point}/image
-      # Read and store all SSH keys
       count=0
       for key in `ls ${mount_point}/image/*_rsa`
       do
         logger -t usbkey "Adding SSH identity '$key' for '$user' [${timeout} min limit]..."
 	ssh-add -t ${timeout} \$key
-        #/bin/su - ${user} -c "keychain -q --timeout ${timeout} ${key}"
         count=$((count+1))
         if [ $debug -eq 1 ]; then
           logger -t usbkey "[DEBUG] cmd: 'ssh-add -t ${timeout} \$key'"
@@ -204,34 +132,29 @@ removed)
           logger -t usbkey "[DEBUG] ssh-agent identities: $ident_out"
         fi
       done
-      # Unmount and close the LUKS device
+      # Unmount and close the device
       logger -t usbkey "Unmounting / closing encrypted device..."
-      #umount ${mount_point}/image
-      diskutil unmount disk2s1
-      cryptsetup close usbkey
+      hdiutil eject /Volumes/usbkey/
 
       # Create insertion hint
-      touch ${userhome}/${usbkey_root}/INSERTED
+      touch ${usbkey_root}/INSERTED
 
-      su $user -c "DISPLAY=:0 notify-send \"USBkey inserted, $count identities added...\""
     else
       logger -t usbkey "USBkey device inserted, but keyfile for ${user} failed to decrypt!!"
-      su $user -c "DISPLAY=:0 notify-send -u critical \"USBkey inserted, but failed to decrypt...\""
     fi
     
     # For additional safety, this device will be ejected if the root of the
     # user has a file named EJECT present in 'usbkey_root'. Delete this file
     # if you need to operate on the USB device for some reason.
-    if [ -f "${userhome}/${usbkey_root}/EJECT" ]; then
+    if [ -f "${usbkey_root}/EJECT" ]; then
       # Unmount temp mount point
-      # umount $(mount_point)
       diskutil unmount ${mount_point}
       # Eject device (also prevents automount by file manager)
       # NOTE: we are assuming the device name will be consistent to current
       #   naming as a kernel device (sdXY)
-      device=$(echo $2| cut -c 1-3)
-      logger -t usbkey "Ejecting ${device}..."
-      eject $2
+      #device=$(2)
+      logger -t usbkey "Ejecting ${mount_point}..."
+      diskutil eject ${mount_point}
     fi
   ;;
 esac
