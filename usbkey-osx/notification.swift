@@ -197,7 +197,7 @@ func usbkey_ctl(x: IOUSBDetector.Event){
     
     if (!directory){
         do {
-        try fileManager.createDirectory(atPath: homeDir.path + usbkey_root, withIntermediateDirectories: true)
+            try fileManager.createDirectory(atPath: homeDir.path + usbkey_root, withIntermediateDirectories: true)
         }
         catch {
             return
@@ -207,6 +207,7 @@ func usbkey_ctl(x: IOUSBDetector.Event){
     switch x {
         case IOUSBDetector.Event.Matched:
             //check if we need to setup USBKey
+            //TODO add a log functionality
             
             //Decrypt the SPARSE image (using the keyfile)
             shell("./decrypt.sh")
@@ -214,33 +215,31 @@ func usbkey_ctl(x: IOUSBDetector.Event){
             (directory, _) = checkFileDirectoryExist(fullPath: mount_point)
             if (directory){
                 do {
-                
                     let files = try fileManager.contentsOfDirectory(atPath: mount_point)
-                
                 for key in files{
                     if (key[key.startIndex] != "."){
                         shell("ssh-add", "-t", "7200", String(mount_point + key))
                     }
                 }
-                    let (_, output) = shell("ssh-add", "-l")
-                    print ("\n" + output!)
+                    /*let (_, output) = shell("ssh-add", "-l")
+                    print ("\n" + output!)*/
                 } catch {
                     return
                 }
             }
-        
-        return
-                
-            
 
-                //Eject SPARSE device
-                /*(a,t) = shell("hdiutil", "eject", mount_point)
+            //Eject SPARSE device
+            shell("hdiutil", "eject", mount_point)
               
-                //Create Insertion hint
-                (a,t) = shell("touch", String(usbkey_root) + "INSERTED")
-            
+            //Create Insertion hint
+            do {
+                try fileManager.createDirectory(atPath: homeDir.path + usbkey_root + "INSERTED", withIntermediateDirectories: true)
+            }
+            catch {
+                return
+        }
             //Eject USBKey device
-            (a,t) = shell("diskutil", "eject", "disk2")*/
+            shell("diskutil", "eject", "disk2")
         
     case IOUSBDetector.Event.Terminated: break
            /* var (a,t) = shell("find", String(usbkey_root) + "INSERTED")
