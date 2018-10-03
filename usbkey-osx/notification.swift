@@ -179,7 +179,7 @@ func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool) {
             return (true, false)
         } else {
             // file exists and is not a directory
-            return (false, false)
+            return (false, true)
         }
     } else {
         // neither exist
@@ -189,48 +189,61 @@ func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool) {
 func usbkey_ctl(x: IOUSBDetector.Event){
     let usbkey_root = "/Library/usbkey/"
     let mount_point : String = "/Volumes/usbkey/"
-    let homeDir = FileManager.default.homeDirectoryForCurrentUser
+    let fileManager = FileManager.default
+    let homeDir = fileManager.homeDirectoryForCurrentUser
     
-    var (file, directory) = checkFileDirectoryExist(fullPath: homeDirURL.path + usbkey_root)
-    print (file)
-    print (directory)
-    return
+    
+    var (directory, _) = checkFileDirectoryExist(fullPath: homeDir.path + usbkey_root)
     
     if (!directory){
-        //(a,t) = shell("mkdir", "-p", usbkey_root)
-        createDirectory
-
+        do {
+        try fileManager.createDirectory(atPath: homeDir.path + usbkey_root, withIntermediateDirectories: true)
+        }
+        catch {
+            return
+        }
     }
-    
     
     switch x {
         case IOUSBDetector.Event.Matched:
             //check if we need to setup USBKey
             
-            
             //Decrypt the SPARSE image (using the keyfile)
             shell("./decrypt.sh")
             
-            var (a,t) = shell("ls", String(mount_point))
-            if (a == 0){
-                let files = String(t!).split(separator: "\n")
+            (directory, _) = checkFileDirectoryExist(fullPath: mount_point)
+            if (directory){
+                do {
+                
+                    let files = try fileManager.contentsOfDirectory(atPath: mount_point)
                 
                 for key in files{
-                    (a,t) = shell("ssh-add", "-t", "7200", String(mount_point + key))
+                    if (key[key.startIndex] != "."){
+                        shell("ssh-add", "-t", "7200", String(mount_point + key))
+                    }
                 }
+                    let (_, output) = shell("ssh-add", "-l")
+                    print ("\n" + output!)
+                } catch {
+                    return
+                }
+            }
+        
+        return
+                
+            
 
                 //Eject SPARSE device
-                (a,t) = shell("hdiutil", "eject", mount_point)
+                /*(a,t) = shell("hdiutil", "eject", mount_point)
               
                 //Create Insertion hint
                 (a,t) = shell("touch", String(usbkey_root) + "INSERTED")
-            }
             
             //Eject USBKey device
-            (a,t) = shell("diskutil", "eject", "disk2")
+            (a,t) = shell("diskutil", "eject", "disk2")*/
         
-        case IOUSBDetector.Event.Terminated:
-            var (a,_) = shell("find", String(usbkey_root) + "INSERTED")
+    case IOUSBDetector.Event.Terminated: break
+           /* var (a,t) = shell("find", String(usbkey_root) + "INSERTED")
             if (a != 0){
                 return
             }
@@ -239,7 +252,7 @@ func usbkey_ctl(x: IOUSBDetector.Event){
             }
             
             shell("pmset", "displaysleepnow")
-            (a,t) = shell("ssh-add", "-D")
+            (a,t) = shell("ssh-add", "-D")*/
         
         
     }
