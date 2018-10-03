@@ -10,10 +10,12 @@ import IOKit
 import IOKit.usb
 import Foundation
 import DiskArbitration
+import CommonCrypto
 
-
+/**
+ * the IOUSBDector class that is implements to receive and run callback functions depending on event 
+ */
 class IOUSBDetector {
-    
     enum Event {
         case Matched
         case Terminated
@@ -22,13 +24,11 @@ class IOUSBDetector {
     let vendorID: Int
     let productID: Int
     
-    
+    //used asychronous queue to run the anonymous function - callback
     var callbackQueue: DispatchQueue?
     
-    var callback: (
-    ( _ detector: IOUSBDetector,  _ event: Event,
-    _ service: io_service_t
-    ) -> Void
+    //anonymous function that is used to response to an event from IOkit
+    var callback: (( _ detector: IOUSBDetector,  _ event: Event,_ service: io_service_t) -> Void
     )?
     
     
@@ -45,18 +45,16 @@ class IOUSBDetector {
     var terminatedIterator: io_iterator_t = 0
     
     
-    
+    /*captures add and removing events from usb asynchronously*/
     private
-    func dispatchEvent (
-        event: Event, iterator: io_iterator_t
-        ) {
+    func dispatchEvent (event: Event, iterator: io_iterator_t) {
         repeat {
             let nextService = IOIteratorNext(iterator)
             guard nextService != 0 else { break }
             if let cb = self.callback, let q = self.callbackQueue {
                 q.async {
-                    cb(self, event, nextService)
-                    IOObjectRelease(nextService)
+                    cb(self, event, nextService) //runs anonymous functions
+                    IOObjectRelease(nextService) //release iooject after callback function finishes
                 }
             } else {
                 IOObjectRelease(nextService)
@@ -70,18 +68,16 @@ class IOUSBDetector {
         self.productID = productID
         self.internalQueue = DispatchQueue(label: "IODetector")
         
+        //use default ports to create a notification object to communication with IOkit
         let notifyPort = IONotificationPortCreate(kIOMasterPortDefault)
         guard notifyPort != nil else { return nil }
         
         self.notifyPort = notifyPort!
         IONotificationPortSetDispatchQueue(notifyPort, self.internalQueue)
-        
-        
-        
-
     }
     
     deinit {
+        //when program is terminated removes all iokit objects
         self.stopDetection()
     }
     
@@ -89,11 +85,12 @@ class IOUSBDetector {
     func startDetection ( ) -> Bool {
         guard matchedIterator == 0 else { return true }
         
-        let matchingDict = IOServiceMatching(kIOUSBDeviceClassName)
-            as NSMutableDictionary
+        //sets up match directory for usb
+        let matchingDict = IOServiceMatching(kIOUSBDeviceClassName) as NSMutableDictionary
         matchingDict[kUSBVendorID] = NSNumber(value: vendorID)
         matchingDict[kUSBProductID] = NSNumber(value: productID)
         
+        //*the callback functions that are called when respectable notifcations are fired up*/
         let matchCallback: IOServiceMatchingCallback = {
             (userData, iterator) in
             let detector = Unmanaged<IOUSBDetector>
@@ -111,8 +108,13 @@ class IOUSBDetector {
             )
         };
         
+        
+        //a self pointer used as reference for callback function
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         
+        
+        
+        /*Setting the notifications for add and removing usb*/
         let addMatchError = IOServiceAddMatchingNotification(
             self.notifyPort, kIOFirstMatchNotification,
             matchingDict, matchCallback, selfPtr, &self.matchedIterator
@@ -122,6 +124,8 @@ class IOUSBDetector {
             matchingDict, termCallback, selfPtr, &self.terminatedIterator
         )
         
+        
+        //checks if there was an error in the configuration of add and remove notifications
         guard addMatchError == 0 && addTermError == 0 else {
             if self.matchedIterator != 0 {
                 IOObjectRelease(self.matchedIterator)
@@ -141,7 +145,7 @@ class IOUSBDetector {
         return true
     }
     
-    
+    //Release IO service objects
     func stopDetection ( ) {
         guard self.matchedIterator != 0 else { return }
         IOObjectRelease(self.matchedIterator)
@@ -152,6 +156,7 @@ class IOUSBDetector {
 }
 
 
+//runs shell commands
 @discardableResult
 func shell(_ args: String...) -> (Int32, String?) {
     
@@ -187,14 +192,14 @@ func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool) {
     }
 }
 func usbkey_ctl(x: IOUSBDetector.Event){
+    /*genetics paths needed*/
     let usbkey_root = "/Library/usbkey/"
     let mount_point : String = "/Volumes/usbkey/"
     let fileManager = FileManager.default
     let homeDir = fileManager.homeDirectoryForCurrentUser
     
-    
+    /*checks to see '/Library/usbkey/' exist and if not creates it*/
     var (directory, _) = checkFileDirectoryExist(fullPath: homeDir.path + usbkey_root)
-    
     if (!directory){
         do {
             try fileManager.createDirectory(atPath: homeDir.path + usbkey_root, withIntermediateDirectories: true)
@@ -204,6 +209,7 @@ func usbkey_ctl(x: IOUSBDetector.Event){
         }
     }
     
+    //chooses a case base on what event was passed in the function
     switch x {
         case IOUSBDetector.Event.Matched:
             //check if we need to setup USBKey
@@ -212,6 +218,7 @@ func usbkey_ctl(x: IOUSBDetector.Event){
             //Decrypt the SPARSE image (using the keyfile)
             shell("./decrypt.sh")
             
+            //adds rsa keys to ssh from the decrypted image
             (directory, _) = checkFileDirectoryExist(fullPath: mount_point)
             if (directory){
                 do {
@@ -242,27 +249,24 @@ func usbkey_ctl(x: IOUSBDetector.Event){
             shell("diskutil", "eject", "disk2")
         
     case IOUSBDetector.Event.Terminated: break
-           /* var (a,t) = shell("find", String(usbkey_root) + "INSERTED")
-            if (a != 0){
-                return
-            }
-            else{
-                (a,t) = shell("rm", String(usbkey_root) + "INSERTED")
-            }
-            
-            shell("pmset", "displaysleepnow")
-            (a,t) = shell("ssh-add", "-D")*/
+        
         
         
     }
 }
 
 
+
+/*
+ * the driver that will be run or simply the main function
+ */
+
 let test = IOUSBDetector(vendorID: 0x0781, productID: 0x5571)
 test?.callbackQueue = DispatchQueue.global()
 test?.callback = {
     (detector, event, service) in
     usbkey_ctl(x: event)
+    print (service)
 };
 
 _ = test?.startDetection()
