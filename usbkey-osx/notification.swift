@@ -22,6 +22,7 @@ class IOUSBDetector {
     let vendorID: Int
     let productID: Int
     
+    
     var callbackQueue: DispatchQueue?
     
     var callback: (
@@ -42,6 +43,7 @@ class IOUSBDetector {
     
     private
     var terminatedIterator: io_iterator_t = 0
+    
     
     
     private
@@ -73,6 +75,10 @@ class IOUSBDetector {
         
         self.notifyPort = notifyPort!
         IONotificationPortSetDispatchQueue(notifyPort, self.internalQueue)
+        
+        
+        
+
     }
     
     deinit {
@@ -148,7 +154,7 @@ class IOUSBDetector {
 
 @discardableResult
 func shell(_ args: String...) -> (Int32, String?) {
-    //commands.joined(separator: " && ")
+    
     let task = Process()
     let pipe = Pipe()
     task.launchPath = "/usr/bin/env"
@@ -161,15 +167,41 @@ func shell(_ args: String...) -> (Int32, String?) {
     //task.terminationStatus
     return (task.terminationStatus, output)
 }
-func usbkey_ctl(x: IOUSBDetector.Event, disk: String){
-    let usbkey_root = "/Users/chibuzonwakama/Library/usbkey/"
+
+//returns if file/directory and determines which one it is
+func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool) {
+    //checks if a directory or file exist
+    let fileManager = FileManager.default
+    var isDir : ObjCBool = false
+    if fileManager.fileExists(atPath: fullPath, isDirectory:&isDir) {
+        if isDir.boolValue {
+            // file exists and is a directory
+            return (true, false)
+        } else {
+            // file exists and is not a directory
+            return (false, false)
+        }
+    } else {
+        // neither exist
+        return (false, false)
+    }
+}
+func usbkey_ctl(x: IOUSBDetector.Event){
+    let usbkey_root = "/Library/usbkey/"
     let mount_point : String = "/Volumes/usbkey/"
-    var (a,t) = shell("find", String(usbkey_root))
+    let homeDir = FileManager.default.homeDirectoryForCurrentUser
     
-    if (a != 0){
-        (a,t) = shell("mkdir", "-p", usbkey_root)
+    var (file, directory) = checkFileDirectoryExist(fullPath: homeDirURL.path + usbkey_root)
+    print (file)
+    print (directory)
+    return
+    
+    if (!directory){
+        //(a,t) = shell("mkdir", "-p", usbkey_root)
+        createDirectory
 
     }
+    
     
     switch x {
         case IOUSBDetector.Event.Matched:
@@ -195,7 +227,7 @@ func usbkey_ctl(x: IOUSBDetector.Event, disk: String){
             }
             
             //Eject USBKey device
-            (a,t) = shell("diskutil", "eject", disk)
+            (a,t) = shell("diskutil", "eject", "disk2")
         
         case IOUSBDetector.Event.Terminated:
             var (a,_) = shell("find", String(usbkey_root) + "INSERTED")
@@ -213,15 +245,12 @@ func usbkey_ctl(x: IOUSBDetector.Event, disk: String){
     }
 }
 
-var diskName : String = "disk2"
-
-
 
 let test = IOUSBDetector(vendorID: 0x0781, productID: 0x5571)
 test?.callbackQueue = DispatchQueue.global()
 test?.callback = {
     (detector, event, service) in
-    usbkey_ctl(x: event, disk: String(diskName))
+    usbkey_ctl(x: event)
 };
 
 _ = test?.startDetection()
