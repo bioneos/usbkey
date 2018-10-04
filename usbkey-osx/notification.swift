@@ -9,51 +9,54 @@ import Darwin
 import IOKit
 import IOKit.usb
 import Foundation
-import DiskArbitration
-import CommonCrypto
 
 /**
- * the IOUSBDector class that is implements to receive and run callback functions depending on event 
+ * the IOUSBDector class that is implements to receive and run callback functions depending on event
  */
 class IOUSBDetector {
+    /*
+     *
+    */
     enum Event {
-        case Matched
-        case Terminated
+        case Inserted
+        case Removed
     }
     
     let vendorID: Int
     let productID: Int
     
-    //used asychronous queue to run the anonymous function - callback
+    //asychronous thread to run the anonymous function - callback
     var callbackQueue: DispatchQueue?
     
     //anonymous function that is used to response to an event from IOkit
     var callback: (( _ detector: IOUSBDetector,  _ event: Event,_ service: io_service_t) -> Void
     )?
     
+    // schedules IOService objects or matching notfications on a sychronous thread
+    private let internalQueue: DispatchQueue
     
-    private
-    let internalQueue: DispatchQueue
+    //use default ports to create a notification object to communication with IOkit
+    private let notifyPort: IONotificationPortRef
     
-    private
-    let notifyPort: IONotificationPortRef
+    //notification iterator which holds new inserted notification from IOService
+    private var insertedIterator: io_iterator_t = 0
     
-    private
-    var matchedIterator: io_iterator_t = 0
-    
-    private
-    var terminatedIterator: io_iterator_t = 0
+    //notification iterator which holds new removed notification from IOService
+    private var removedIterator: io_iterator_t = 0
     
     
-    /*captures add and removing events from usb asynchronously*/
-    private
-    func dispatchEvent (event: Event, iterator: io_iterator_t) {
+    /*
+     * captures from insert and remove events from usb and runs an asynchronous callback function
+     */
+    private func dispatchEvent (event: Event, iterator: io_iterator_t) {
+        // checks all io services available through io iterator
         repeat {
             let nextService = IOIteratorNext(iterator)
-            guard nextService != 0 else { break }
+            guard nextService != 0 else { break } // there are no more io serices or notfications
             if let cb = self.callback, let q = self.callbackQueue {
+                // asynchrous thread to run callback function
                 q.async {
-                    cb(self, event, nextService) //runs anonymous functions
+                    cb(self, event, nextService) //runs anonymous callback functions
                     IOObjectRelease(nextService) //release iooject after callback function finishes
                 }
             } else {
@@ -68,35 +71,41 @@ class IOUSBDetector {
         self.productID = productID
         self.internalQueue = DispatchQueue(label: "IODetector")
         
-        //use default ports to create a notification object to communication with IOkit
         let notifyPort = IONotificationPortCreate(kIOMasterPortDefault)
         guard notifyPort != nil else { return nil }
         
         self.notifyPort = notifyPort!
-        IONotificationPortSetDispatchQueue(notifyPort, self.internalQueue)
+        IONotificationPortSetDispatchQueue(notifyPort, self.internalQueue) //setup the dispatch queue to capture io notifications
     }
     
     deinit {
-        //when program is terminated removes all iokit objects
+        //when program is Removed removes all iokit objects
         self.stopDetection()
     }
     
-    
+    /*
+     * starts up detections by add matching notifications for insert and removing of the physical usb
+     */
     func startDetection ( ) -> Bool {
-        guard matchedIterator == 0 else { return true }
+        guard insertedIterator == 0 else { return true }
         
-        //sets up match directory for usb
+        //sets up matching criteria (vendorID & productID) for usb by using a dictionary
         let matchingDict = IOServiceMatching(kIOUSBDeviceClassName) as NSMutableDictionary
         matchingDict[kUSBVendorID] = NSNumber(value: vendorID)
         matchingDict[kUSBProductID] = NSNumber(value: productID)
         
-        //*the callback functions that are called when respectable notifcations are fired up*/
+        
+        
+        /*
+         * stores callback matching functions for insert and remove that are calls dispatchEvent
+         * with differnt io_iterators and Events when the respectable notifcations are fired up
+         */
         let matchCallback: IOServiceMatchingCallback = {
             (userData, iterator) in
             let detector = Unmanaged<IOUSBDetector>
                 .fromOpaque(userData!).takeUnretainedValue()
             detector.dispatchEvent(
-                event: .Matched, iterator: iterator
+                event: .Inserted, iterator: iterator
             )
         };
         let termCallback: IOServiceMatchingCallback = {
@@ -104,7 +113,7 @@ class IOUSBDetector {
             let detector = Unmanaged<IOUSBDetector>
                 .fromOpaque(userData!).takeUnretainedValue()
             detector.dispatchEvent(
-                event: .Terminated, iterator: iterator
+                event: .Removed, iterator: iterator
             )
         };
         
@@ -114,46 +123,54 @@ class IOUSBDetector {
         
         
         
-        /*Setting the notifications for add and removing usb*/
-        let addMatchError = IOServiceAddMatchingNotification(
+        /*
+         * Setting the notifications for add and removing events
+         * returns a status value responding to if the new Notification Service was
+         * added correctly
+         */
+        let insertAddNotificationStatus = IOServiceAddMatchingNotification(
             self.notifyPort, kIOFirstMatchNotification,
-            matchingDict, matchCallback, selfPtr, &self.matchedIterator
+            matchingDict, matchCallback, selfPtr, &self.insertedIterator
         )
-        let addTermError = IOServiceAddMatchingNotification(
+        let removeAddNotificationStatus = IOServiceAddMatchingNotification(
             self.notifyPort, kIOTerminatedNotification,
-            matchingDict, termCallback, selfPtr, &self.terminatedIterator
+            matchingDict, termCallback, selfPtr, &self.removedIterator
         )
         
         
         //checks if there was an error in the configuration of add and remove notifications
-        guard addMatchError == 0 && addTermError == 0 else {
-            if self.matchedIterator != 0 {
-                IOObjectRelease(self.matchedIterator)
-                self.matchedIterator = 0
+        guard insertAddNotificationStatus == 0 && removeAddNotificationStatus == 0 else {
+            if self.insertedIterator != 0 {
+                IOObjectRelease(self.insertedIterator)
+                self.insertedIterator = 0
             }
-            if self.terminatedIterator != 0 {
-                IOObjectRelease(self.terminatedIterator)
-                self.terminatedIterator = 0
+            if self.removedIterator != 0 {
+                IOObjectRelease(self.removedIterator)
+                self.removedIterator = 0
             }
             return false
         }
         
         // This is required even if nothing was found to "arm" the callback
-        self.dispatchEvent(event: .Matched, iterator: self.matchedIterator)
-        self.dispatchEvent(event: .Terminated, iterator: self.terminatedIterator)
+        self.dispatchEvent(event: .Inserted, iterator: self.insertedIterator)
+        self.dispatchEvent(event: .Removed, iterator: self.removedIterator)
         
         return true
     }
     
     //Release IO service objects
     func stopDetection ( ) {
-        guard self.matchedIterator != 0 else { return }
-        IOObjectRelease(self.matchedIterator)
-        IOObjectRelease(self.terminatedIterator)
-        self.matchedIterator = 0
-        self.terminatedIterator = 0
+        guard self.insertedIterator != 0 else { return }
+        IOObjectRelease(self.insertedIterator)
+        IOObjectRelease(self.removedIterator)
+        self.insertedIterator = 0
+        self.removedIterator = 0
     }
 }
+
+/*
+ * Helper functions
+ */
 
 
 //runs shell commands
@@ -169,7 +186,6 @@ func shell(_ args: String...) -> (Int32, String?) {
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     let output: String? = String(data: data, encoding: String.Encoding.utf8)
     task.waitUntilExit()
-    //task.terminationStatus
     return (task.terminationStatus, output)
 }
 
@@ -211,7 +227,7 @@ func usbkey_ctl(x: IOUSBDetector.Event){
     
     //chooses a case base on what event was passed in the function
     switch x {
-        case IOUSBDetector.Event.Matched:
+        case IOUSBDetector.Event.Inserted:
             //check if we need to setup USBKey
             //TODO add a log functionality
             
@@ -248,13 +264,12 @@ func usbkey_ctl(x: IOUSBDetector.Event){
             //Eject USBKey device
             shell("diskutil", "eject", "disk2")
         
-    case IOUSBDetector.Event.Terminated: break
+    case IOUSBDetector.Event.Removed: break
         
         
         
     }
 }
-
 
 
 /*
