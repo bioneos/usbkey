@@ -25,6 +25,9 @@ class IOUSBDetector {
     let vendorID: Int
     let productID: Int
     
+    //thread for DASession
+    var callbackQueueDA : DispatchQueue?
+    
     //asychronous thread to run the anonymous function - callback
     var callbackQueue: DispatchQueue?
     
@@ -166,6 +169,13 @@ class IOUSBDetector {
         self.insertedIterator = 0
         self.removedIterator = 0
     }
+    
+    func run() -> Void {
+        var gameTimer: Timer!
+        gameTimer = Timer.scheduledTimer(timeInterval: 5, target: self, selector: #selector(runTimedCode), userInfo: nil, repeats: true)
+    }
+    
+    @objc func runTimedCode() -> Void {}
 }
 
 /*
@@ -207,7 +217,8 @@ func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool) {
         return (false, false)
     }
 }
-func usbkey_ctl(x: IOUSBDetector.Event){
+
+func usbkey_ctl(x: IOUSBDetector.Event, path: String){
     /*genetics paths needed*/
     let usbkey_root = "/Library/usbkey/"
     let mount_point : String = "/Volumes/usbkey/"
@@ -232,7 +243,7 @@ func usbkey_ctl(x: IOUSBDetector.Event){
             //TODO add a log functionality
             
             //Decrypt the SPARSE image (using the keyfile)
-            shell("./decrypt.sh")
+            decryptImage(path: homeDir.path + path)
             
             //adds rsa keys to ssh from the decrypted image
             (directory, _) = checkFileDirectoryExist(fullPath: mount_point)
@@ -244,8 +255,8 @@ func usbkey_ctl(x: IOUSBDetector.Event){
                         shell("ssh-add", "-t", "7200", String(mount_point + key))
                     }
                 }
-                    /*let (_, output) = shell("ssh-add", "-l")
-                    print ("\n" + output!)*/
+                    let (_, output) = shell("ssh-add", "-l")
+                    print ("\n" + output!)
                 } catch {
                     return
                 }
@@ -271,20 +282,64 @@ func usbkey_ctl(x: IOUSBDetector.Event){
     }
 }
 
+func decryptImage(path: String) -> Void {
+    let url = URL(fileURLWithPath: path)
+    let dir = url.deletingLastPathComponent()
+    let last = url.lastPathComponent
+    let fileUrl = dir.appendingPathComponent(last)
+    do {
+        let key = try String(contentsOf: fileUrl, encoding: .utf8)
+        let newKey = key.replacingOccurrences(of: "\n", with: "", options: .literal, range: nil)
+        hdiutilAttach(key: ["printf", newKey])
+        
+    }
+    catch{
+        return
+    }
+    
+}
+func hdiutilAttach(key: [String]) -> Void {
+    let pipe = Pipe()
+    
+    let printf = Process()
+    printf.launchPath = "/usr/bin/env"
+    print (key)
+    printf.arguments = key
+    printf.standardOutput = pipe
+    
+    let hdiutil = Process()
+    hdiutil.launchPath = "/usr/bin/env"
+    hdiutil.arguments = ["hdiutil", "attach", "-stdinpass", "t.sparseimage"]
+    hdiutil.standardInput = pipe
+    
+    let out = Pipe()
+    hdiutil.standardOutput = out
+    
+    printf.launch()
+    hdiutil.launch()
+    hdiutil.waitUntilExit()
+    
+    let data = out.fileHandleForReading.readDataToEndOfFile()
+    let output = NSString(data: data, encoding: String.Encoding.utf8.rawValue)
+    print(output ?? "no output")
+}
+
+
+
+
 
 /*
  * the driver that will be run or simply the main function
  */
-
 let test = IOUSBDetector(vendorID: 0x0781, productID: 0x5571)
 test?.callbackQueue = DispatchQueue.global()
 test?.callback = {
     (detector, event, service) in
-    usbkey_ctl(x: event)
+    usbkey_ctl(x: event, path: "/Library/usbkey/key")
     print (service)
 };
 
 _ = test?.startDetection()
 
-
-while true {sleep(1)}
+while true {test?.run()}
+//while true {sleep(1)}
