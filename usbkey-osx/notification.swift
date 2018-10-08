@@ -16,38 +16,40 @@ import DiskArbitration
  */
 class IOUSBDetector {
     /*
-     *
-    */
+     * values that represent the state of the usbkey device on the computer
+     */
     enum Event {
         case Inserted
         case Removed
     }
     
+    // how usb device is identified
     let vendorID: Int
     let productID: Int
     
     
-    //asychronous thread to run the anonymous function - callback
+    //asychronous thread (1) to run the anonymous function - callback
     private var callbackQueue: DispatchQueue?
     
     //anonymous function that is used to response to an event from IOkit
     var callback: (( _ detector: IOUSBDetector,  _ event: Event,_ service: io_service_t) -> Void)?
     
-    // schedules IOService objects or matching notfications on a sychronous thread
+    // schedules IOService objects or matching notfications on a sychronous thread (2)
     private let internalQueue: DispatchQueue
     
     //use default ports to create a notification object to communication with IOkit
     private let notifyPort: IONotificationPortRef
     
-    
     //notification iterator which holds new removed notification from IOService
     private var removedIterator: io_iterator_t = 0
     
-    //thread for DASession
+    //thread (3) for DASession
     private let internalQueueDA : DispatchQueue?
     
+    //session for register events for disk arbitration like disk appearance
     private let session : DASession?
     
+    //the disk that contains the sparse image
     var dadisk : DADisk?
     
     
@@ -76,25 +78,28 @@ class IOUSBDetector {
         self.vendorID = vendorID
         self.productID = productID
         
-        //setting the DASession
-        //
+        /*
+         * Setting up the DASession to detect insertion of usb device
+         */
         self.internalQueueDA = DispatchQueue(label: "IODADetector")
         
         self.session = DASessionCreate(CFAllocatorGetDefault().takeRetainedValue())
     
-        DASessionSetDispatchQueue(session!, internalQueueDA)
+        DASessionSetDispatchQueue(session!, internalQueueDA) //setups the session to capture registered events
         
+        
+        /*
+         * Setting up IOkit port to detect removal of usb device
+         */
         self.internalQueue = DispatchQueue(label: "IODetector")
         
         self.callbackQueue = DispatchQueue.global()
         
         let notifyPort = IONotificationPortCreate(kIOMasterPortDefault)
-        guard notifyPort != nil else { return nil }
+        guard notifyPort != nil else { return nil } //checking for errors
         
         self.notifyPort = notifyPort!
         IONotificationPortSetDispatchQueue(notifyPort, self.internalQueue) //setup the dispatch queue to capture io notifications
-        
-        
         
     }
     
@@ -114,23 +119,22 @@ class IOUSBDetector {
         matchingDict[kUSBVendorID] = NSNumber(value: vendorID)
         matchingDict[kUSBProductID] = NSNumber(value: productID)
         
-        
-        
+        //match dictionary for usb device insertion of usb model, vendor, and volume
         let matchingDADick = [kDADiskDescriptionDeviceModelKey : "Cruzer Fit", kDADiskDescriptionDeviceVendorKey : "SanDisk", kDADiskDescriptionVolumeMountableKey : 1] as CFDictionary
-        
         
         //a self pointer used as reference for callback function
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        
         /*
          * setup the disk arbiration notification
          */
-        //DARegisterDiskAppearedCallback
-        //DARegisterDiskMountApprovalCallback
         DARegisterDiskAppearedCallback(
             session!,
             matchingDADick,
+            /*anonymous function - DiskAppearedCallback function parameter*/
             { (disk, context) in
                 if DADiskGetBSDName(disk) != nil {
+                    //two second delay to wait until usb device is mounted
                     DispatchQueue.global(qos: DispatchQoS.QoSClass.background).asyncAfter(deadline: .now() + 2){
                         usbkey_ctl(x: IOUSBDetector.Event.Inserted, path: "/Library/usbkey/key", disk: disk)
                     }
@@ -141,10 +145,9 @@ class IOUSBDetector {
         
         
         /*
-         * stores callback matching functions for insert and remove that are calls dispatchEvent
+         * stores callback matching functions for remove that are calls dispatchEvent
          * with differnt io_iterators and Events when the respectable notifcations are fired up
          */
-        
         let termCallback: IOServiceMatchingCallback = {
             (userData, iterator) in
             let detector = Unmanaged<IOUSBDetector>
@@ -154,10 +157,8 @@ class IOUSBDetector {
             )
         };
         
-        
-        
         /*
-         * Setting the notifications for add and removing events
+         * Setting the notifications for removing events
          * returns a status value responding to if the new Notification Service was
          * added correctly
          */
@@ -166,8 +167,7 @@ class IOUSBDetector {
             matchingDict, termCallback, selfPtr, &self.removedIterator
         )
         
-        
-        //checks if there was an error in the configuration of add and remove notifications
+        //checks if there was an error in the configuration of remove notifications
         guard removeAddNotificationStatus == 0 else {
             if self.removedIterator != 0 {
                 IOObjectRelease(self.removedIterator)
@@ -198,7 +198,6 @@ class IOUSBDetector {
 //runs shell commands
 @discardableResult
 func shell(_ args: String... , launchPath : String = "/usr/bin/env") -> (Int32, String?) {
-    
     let task = Process()
     let pipe = Pipe()
     task.launchPath = launchPath
@@ -209,6 +208,51 @@ func shell(_ args: String... , launchPath : String = "/usr/bin/env") -> (Int32, 
     let output: String? = String(data: data, encoding: String.Encoding.utf8)
     task.waitUntilExit()
     return (task.terminationStatus, output)
+}
+// runs a two away command pipeline shell commands
+func pipeline(args1: [String], args2: [String]) -> Void {
+    let pipe = Pipe()
+    
+    let cmd1 = Process()
+    cmd1.launchPath = "/usr/bin/env"
+    cmd1.arguments = args1
+    cmd1.standardOutput = pipe
+    
+    let cmd2 = Process()
+    cmd2.launchPath = "/usr/bin/env"
+    cmd2.arguments = args2
+    cmd2.standardInput = pipe
+    
+    let out = Pipe()
+    cmd2.standardOutput = out
+    
+    cmd1.launch()
+    cmd2.launch()
+    
+    
+    
+    let data = out.fileHandleForReading.readDataToEndOfFile()
+    let output = NSString(data: data, encoding: String.Encoding.utf8.rawValue)
+    cmd2.waitUntilExit()
+    print(output ?? "no output")
+}
+
+func decryptImage(path: String, sparsePath: String) -> Void {
+    let url = URL(fileURLWithPath: path)
+    let urlDevice = URL(fileURLWithPath: sparsePath)
+    let dir = url.deletingLastPathComponent()
+    let last = url.lastPathComponent
+    let fileUrl = dir.appendingPathComponent(last)
+    do {
+        let key = try String(contentsOf: fileUrl, encoding: .utf8)
+        let newKey = key.replacingOccurrences(of: "\n", with: "", options: .literal, range: nil)
+        pipeline(args1: ["printf", newKey], args2: ["hdiutil", "attach", "-stdinpass", urlDevice.path + "/osx.sparseimage"])
+    }
+    catch{
+        print ("Fail")
+        return
+    }
+    
 }
 
 //returns if file/directory and determines which one it is
@@ -290,7 +334,7 @@ func usbkey_ctl(x: IOUSBDetector.Event, path: String, disk : DADisk?){
             //Create Insertion hint
             fileManager.createFile(atPath: homeDir.path + usbkey_root + "INSERTED", contents: nil, attributes: nil)
             
-        
+            //Ejects usbkey
             shell("diskutil", "eject", newPath)
             print ("eject")
         
@@ -316,66 +360,20 @@ func usbkey_ctl(x: IOUSBDetector.Event, path: String, disk : DADisk?){
     }
 }
 
-func decryptImage(path: String, sparsePath: String) -> Void {
-    let url = URL(fileURLWithPath: path)
-    let urlDevice = URL(fileURLWithPath: sparsePath)
-    let dir = url.deletingLastPathComponent()
-    let last = url.lastPathComponent
-    let fileUrl = dir.appendingPathComponent(last)
-    do {
-        let key = try String(contentsOf: fileUrl, encoding: .utf8)
-        let newKey = key.replacingOccurrences(of: "\n", with: "", options: .literal, range: nil)
-        hdiutilAttach(key: ["printf", newKey], args: ["hdiutil", "attach", "-stdinpass", urlDevice.path + "/osx.sparseimage"])
-    }
-    catch{
-        print ("Fail")
-        return
-    }
-    
-}
-func hdiutilAttach(key: [String], args: [String]) -> Void {
-    let pipe = Pipe()
-    
-    let printf = Process()
-    printf.launchPath = "/usr/bin/env"
-    printf.arguments = key
-    printf.standardOutput = pipe
-    
-    let hdiutil = Process()
-    hdiutil.launchPath = "/usr/bin/env"
-    hdiutil.arguments = args
-    hdiutil.standardInput = pipe
-    
-    let out = Pipe()
-    hdiutil.standardOutput = out
-    
-    printf.launch()
-    hdiutil.launch()
-    
-    
-    
-    let data = out.fileHandleForReading.readDataToEndOfFile()
-    let output = NSString(data: data, encoding: String.Encoding.utf8.rawValue)
-    hdiutil.waitUntilExit()
-    print(output ?? "no output")
-}
-
-
 
 
 
 /*
  * the driver that will be run or simply the main function
  */
-let test = IOUSBDetector(vendorID: 0x0781, productID: 0x5571)
-_ = test?.startDetection()
+let usbEventDetector = IOUSBDetector(vendorID: 0x0781, productID: 0x5571)
+_ = usbEventDetector?.startDetection()
 
-test?.callback = {
+usbEventDetector?.callback = {
     (detector, event, service) in
-    usbkey_ctl(x: event, path: "/Library/usbkey/key", disk: test?.dadisk)
+    usbkey_ctl(x: event, path: "/Library/usbkey/key", disk: usbEventDetector?.dadisk)
 };
  print ("Start")
 
-//while true {test?.run()}
 while true {sleep(1)}
 
