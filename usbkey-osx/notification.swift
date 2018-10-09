@@ -27,12 +27,13 @@ class IOUSBDetector {
     let vendorID: Int
     let productID: Int
     
+    private let internalQueueFS : DispatchQueue?
     
     //asychronous thread (1) to run the anonymous function - callback
     private var callbackQueue: DispatchQueue?
     
     //anonymous function that is used to response to an event from IOkit
-    var callback: (( _ detector: IOUSBDetector,  _ event: Event,_ service: io_service_t) -> Void)?
+    private let callback: (( _ detector: IOUSBDetector,  _ event: Event,_ service: io_service_t) -> Void)?
     
     // schedules IOService objects or matching notfications on a sychronous thread (2)
     private let internalQueue: DispatchQueue
@@ -50,7 +51,12 @@ class IOUSBDetector {
     private let session : DASession?
     
     //the disk that contains the sparse image
-    var dadisk : DADisk?
+    //var dadisk : DADisk?
+    
+    var fsEventStream : FSEventStreamRef?
+    
+    static var dadiskPath : String?
+    
     
     
     /*
@@ -78,6 +84,8 @@ class IOUSBDetector {
         self.vendorID = vendorID
         self.productID = productID
         
+        self.internalQueueFS = DispatchQueue.global(qos: DispatchQoS.QoSClass.background)
+        
         /*
          * Setting up the DASession to detect insertion of usb device
          */
@@ -101,6 +109,11 @@ class IOUSBDetector {
         self.notifyPort = notifyPort!
         IONotificationPortSetDispatchQueue(notifyPort, self.internalQueue) //setup the dispatch queue to capture io notifications
         
+        //usbEventDetector?.dadisk
+        self.callback = {
+            (detector, event, service) in
+            usbkey_ctl(x: event, path: "/Library/usbkey/key", diskPath: "/Volumes/")
+        }
     }
     
     deinit {
@@ -125,23 +138,49 @@ class IOUSBDetector {
         //a self pointer used as reference for callback function
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         
+        let fsEventCallback : FSEventStreamCallback =
+        { (streamRef, clientCallBack, numEvents, eventPaths, eventFlags, eventIds) in
+            //print (*eventPaths)
+            let diskPath = eventPaths.assumingMemoryBound(to: String.self)
+            //eventPaths.g
+            let name = diskPath[0]
+            //print (name)
+            //assumingMemoryBound(to: String.self).advanced(by: 1).pointee
+            //print(eventPaths)
+            usbkey_ctl(x: IOUSBDetector.Event.Inserted, path: "/Library/usbkey/key", diskPath: IOUSBDetector.dadiskPath)
+            //FSEventStreamStop(streamRef)
+            //FSEventStreamInvalidate(streamRef)
+            
+        }
+        
+        fsEventStream = FSEventStreamCreate(kCFAllocatorDefault, fsEventCallback, nil, ["/Volumes/"] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0, FSEventStreamCreateFlags(kFSEventStreamEventFlagNone))!
+        
+        FSEventStreamSetDispatchQueue(fsEventStream!, internalQueueFS)
+        
+        /*anonymous function - DiskAppearedCallback function parameter*/
+        let diskcallback : DADiskAppearedCallback =
+        { (disk, context) in
+            let detector = Unmanaged<IOUSBDetector>.fromOpaque(context!).takeUnretainedValue()
+            let diskDict  = DADiskCopyDescription(disk)
+            var newPath = "/Volumes/"
+            if let name = (diskDict as! NSDictionary)[kDADiskDescriptionVolumeNameKey] as! String? {
+                newPath = "/Volumes/" + name + "/"
+                IOUSBDetector.dadiskPath = newPath
+                print (IOUSBDetector.dadiskPath)
+                let cfarray = [newPath] as CFArray
+                print (newPath)
+                FSEventStreamSetExclusionPaths(detector.fsEventStream!, cfarray)
+            }
+            //usbkey_ctl(x: IOUSBDetector.Event.Inserted, path: "/Library/usbkey/key", disk: disk)
+        }
+        
+        
         /*
          * setup the disk arbiration notification
          */
-        DARegisterDiskAppearedCallback(
-            session!,
-            matchingDADick,
-            /*anonymous function - DiskAppearedCallback function parameter*/
-            { (disk, context) in
-                if DADiskGetBSDName(disk) != nil {
-                    //two second delay to wait until usb device is mounted
-                    DispatchQueue.global(qos: DispatchQoS.QoSClass.background).asyncAfter(deadline: .now() + 2){
-                        usbkey_ctl(x: IOUSBDetector.Event.Inserted, path: "/Library/usbkey/key", disk: disk)
-                    }
-                    
-                }
-        },
-            selfPtr)
+        DARegisterDiskAppearedCallback(session!,matchingDADick, diskcallback, selfPtr)
+        
+        
         
         
         /*
@@ -179,6 +218,7 @@ class IOUSBDetector {
         // This is required even if nothing was found to "arm" the callback
         self.dispatchEvent(event: .Removed, iterator: self.removedIterator)
         
+        FSEventStreamStart(fsEventStream!)
         return true
     }
     
@@ -252,7 +292,7 @@ func decryptImage(path: String, sparsePath: String) -> Void {
         print ("Fail")
         return
     }
-    
+    print ("hi")
 }
 
 //returns if file/directory and determines which one it is
@@ -274,8 +314,9 @@ func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool) {
     }
 }
 
-func usbkey_ctl(x: IOUSBDetector.Event, path: String, disk : DADisk?){
+func usbkey_ctl(x: IOUSBDetector.Event, path: String, diskPath : String?){
     /*genetics paths needed*/
+    print(diskPath)
     let usbkey_root = "/Library/usbkey/"
     let mount_point : String = "/Volumes/usbkey/"
     let fileManager = FileManager.default
@@ -297,18 +338,12 @@ func usbkey_ctl(x: IOUSBDetector.Event, path: String, disk : DADisk?){
     //chooses a case base on what event was passed in the function
     switch x {
         case IOUSBDetector.Event.Inserted:
-            let diskDict  = DADiskCopyDescription(disk!)
-            var newPath = "/Volumes/"
-            //print (diskDict)
-            if let name = (diskDict as! NSDictionary)[kDADiskDescriptionVolumeNameKey] as! String? {
-                newPath = "/Volumes/" + name + "/"
-            }
             
             //check if we need to setup USBKey
             //TODO add a log functionality
             
             //Decrypt the SPARSE image (using the keyfile)
-            decryptImage(path: homeDir.path + path, sparsePath: newPath)
+            decryptImage(path: homeDir.path + path, sparsePath: diskPath!)
             
             
             //adds rsa keys to ssh from the decrypted image
@@ -335,7 +370,7 @@ func usbkey_ctl(x: IOUSBDetector.Event, path: String, disk : DADisk?){
             fileManager.createFile(atPath: homeDir.path + usbkey_root + "INSERTED", contents: nil, attributes: nil)
             
             //Ejects usbkey
-            shell("diskutil", "eject", newPath)
+            shell("diskutil", "eject", diskPath!)
             print ("eject")
         
     case IOUSBDetector.Event.Removed:
@@ -369,11 +404,8 @@ func usbkey_ctl(x: IOUSBDetector.Event, path: String, disk : DADisk?){
 let usbEventDetector = IOUSBDetector(vendorID: 0x0781, productID: 0x5571)
 _ = usbEventDetector?.startDetection()
 
-usbEventDetector?.callback = {
-    (detector, event, service) in
-    usbkey_ctl(x: event, path: "/Library/usbkey/key", disk: usbEventDetector?.dadisk)
-};
- print ("Start")
 
-while true {sleep(1)}
+print ("Start")
+
+RunLoop.main.run()
 
