@@ -70,7 +70,7 @@ class IOUSBDetector {
             if let cb = self.callback, let q = self.callbackQueue {
                 // asynchrous thread to run callback function
                 q.async {
-                    cb(self, event, nextService) // runs anonymous callback functions
+                    cb(self, nextService) // runs anonymous callback functions
                     IOObjectRelease(nextService) // release iooject after callback function finishes
                 }
             } else {
@@ -111,7 +111,7 @@ class IOUSBDetector {
         
         // the callback usbkey removal function initialization
         self.callback = {
-            (detector, event, service) in
+            (detector, service) in
             usbkey_removeCtl()
         }
     }
@@ -208,7 +208,7 @@ class IOUSBDetector {
         }
         
         // This is required even if nothing was found to "arm" the callback
-        self.dispatchEvent(event: .Removed, iterator: self.removedIterator)
+        self.dispatchEvent(iterator: self.removedIterator)
         
         return true
     }
