@@ -57,6 +57,8 @@ class IOUSBDetector {
     
     static var dadiskPath : String?
     
+    var fsEventCallback : FSEventStreamCallback?
+    
     
     
     /*
@@ -138,7 +140,7 @@ class IOUSBDetector {
         //a self pointer used as reference for callback function
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         
-        let fsEventCallback : FSEventStreamCallback =
+        self.fsEventCallback =
         { (streamRef, clientCallBack, numEvents, eventPaths, eventFlags, eventIds) in
             //print (*eventPaths)
             let diskPath = eventPaths.assumingMemoryBound(to: String.self)
@@ -148,12 +150,12 @@ class IOUSBDetector {
             //assumingMemoryBound(to: String.self).advanced(by: 1).pointee
             //print(eventPaths)
             usbkey_ctl(x: IOUSBDetector.Event.Inserted, path: "/Library/usbkey/key", diskPath: IOUSBDetector.dadiskPath)
-            //FSEventStreamStop(streamRef)
-            //FSEventStreamInvalidate(streamRef)
+            FSEventStreamStop(streamRef)
+            FSEventStreamInvalidate(streamRef)
             
         }
         
-        fsEventStream = FSEventStreamCreate(kCFAllocatorDefault, fsEventCallback, nil, ["/Volumes/"] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0, FSEventStreamCreateFlags(kFSEventStreamEventFlagNone))!
+        fsEventStream = FSEventStreamCreate(kCFAllocatorDefault, self.fsEventCallback!, nil, ["/Volumes/"] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0, FSEventStreamCreateFlags(kFSEventStreamEventFlagNone))!
         
         FSEventStreamSetDispatchQueue(fsEventStream!, internalQueueFS)
         
@@ -166,10 +168,15 @@ class IOUSBDetector {
             if let name = (diskDict as! NSDictionary)[kDADiskDescriptionVolumeNameKey] as! String? {
                 newPath = "/Volumes/" + name + "/"
                 IOUSBDetector.dadiskPath = newPath
-                print (IOUSBDetector.dadiskPath)
+                //print (IOUSBDetector.dadiskPath)
                 let cfarray = [newPath] as CFArray
-                print (newPath)
-                FSEventStreamSetExclusionPaths(detector.fsEventStream!, cfarray)
+                //print (newPath)
+                //FSEventStreamSetExclusionPaths(detector.fsEventStream!, cfarray)
+                //print (FSEventStreamCopyPathsBeingWatched(detector.fsEventStream!))
+                detector.fsEventStream = FSEventStreamCreate(kCFAllocatorDefault, detector.fsEventCallback!, nil, cfarray as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0, FSEventStreamCreateFlags(kFSEventStreamEventFlagNone))!
+                FSEventStreamSetDispatchQueue(detector.fsEventStream!, detector.internalQueueFS)
+                FSEventStreamStart(detector.fsEventStream!)
+                //FSEventStreamFlushAsync(detector.fsEventStream!)
             }
             //usbkey_ctl(x: IOUSBDetector.Event.Inserted, path: "/Library/usbkey/key", disk: disk)
         }
@@ -218,7 +225,6 @@ class IOUSBDetector {
         // This is required even if nothing was found to "arm" the callback
         self.dispatchEvent(event: .Removed, iterator: self.removedIterator)
         
-        FSEventStreamStart(fsEventStream!)
         return true
     }
     
@@ -313,10 +319,8 @@ func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool) {
         return (false, false)
     }
 }
-
 func usbkey_ctl(x: IOUSBDetector.Event, path: String, diskPath : String?){
     /*genetics paths needed*/
-    print(diskPath)
     let usbkey_root = "/Library/usbkey/"
     let mount_point : String = "/Volumes/usbkey/"
     let fileManager = FileManager.default
@@ -386,8 +390,13 @@ func usbkey_ctl(x: IOUSBDetector.Event, path: String, diskPath : String?){
                 return
             }
         }
+        //goes to sleep mode
         //shell("pmset", "displaysleepnow")
+        
+        //lockscreen
         shell("-suspend", launchPath: "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession")
+        
+        //removes all keys from ssh
         shell("ssh-add", "-D")
         
         
@@ -401,11 +410,11 @@ func usbkey_ctl(x: IOUSBDetector.Event, path: String, diskPath : String?){
 /*
  * the driver that will be run or simply the main function
  */
-let usbEventDetector = IOUSBDetector(vendorID: 0x0781, productID: 0x5571)
+/*let usbEventDetector = IOUSBDetector(vendorID: 0x0781, productID: 0x5571)
 _ = usbEventDetector?.startDetection()
 
 
 print ("Start")
 
-RunLoop.main.run()
+RunLoop.main.run()*/
 
