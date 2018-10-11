@@ -1,14 +1,4 @@
 //
-//  main.swift
-//  USBkeyOSX
-//
-//  Created by Chibuzo Nwakama on 3/10/2018.
-//  Copyright © 2018 Chibuzo Nwakama. All rights reserved.
-//
-//
-//  notification.swift
-//  
-//
 //  Created by Chibuzo Nwakama on 1/10/2018.
 //
 
@@ -140,7 +130,8 @@ class IOUSBDetector {
         matchingDict[kUSBProductID] = NSNumber(value: productID)
         
         // match dictionary for usb device insertion of usb model, vendor, and volume used for IOKit
-        let matchingDADick = [kDADiskDescriptionDeviceModelKey : "Cruzer Fit", kDADiskDescriptionDeviceVendorKey : "SanDisk", kDADiskDescriptionVolumeMountableKey : 1] as CFDictionary
+        let matchingDADick : CFDictionary = [kDADiskDescriptionDeviceModelKey as String : "Cruzer Fit",
+                    kDADiskDescriptionDeviceVendorKey as String : "SanDisk", kDADiskDescriptionVolumeMountableKey as String : 1] as CFDictionary
         
         // a self pointer used as reference for callback function (DA and IOKit callback functions)
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
@@ -479,14 +470,3 @@ print ("Start")
 
 RunLoop.main.run()
 
-
-
-/*import CommandLineToolCore
-
-let tool = CommandLineTool()
-
-do {
-     try tool.run()
-} catch {
-     print("Whoops! An error occurred: \(error)")
-}*/
