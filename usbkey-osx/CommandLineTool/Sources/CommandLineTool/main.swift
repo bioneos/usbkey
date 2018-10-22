@@ -132,7 +132,7 @@ class IOUSBDetector {
         matchingDict[kUSBProductID] = NSNumber(value: productID)
         
         // match dictionary for usb device insertion of usb model, vendor, and volume used for IOKit
-        let matchingDADick : CFDictionary = [kDADiskDescriptionDeviceModelKey as String : "Cruzer Fit",
+        let matchingDADict : CFDictionary = [kDADiskDescriptionDeviceModelKey as String : "Cruzer Fit",
                     kDADiskDescriptionDeviceVendorKey as String : "SanDisk", kDADiskDescriptionVolumeMountableKey as String : 1] as CFDictionary
         
         // a self pointer used as reference for callback function (DA and IOKit callback functions)
@@ -186,7 +186,7 @@ class IOUSBDetector {
         };
         
         // Setup the disk arbiration notification
-        DARegisterDiskAppearedCallback(session!,matchingDADick, self.diskcallback!, selfPtr)
+        DARegisterDiskAppearedCallback(session!,matchingDADict, self.diskcallback!, selfPtr)
         
         /*
          * Setting the notifications for removing events

@@ -1,2 +1,4 @@
 *.sparseimage
 .DS_Store
+usbkey-osx/CommandLineTool/.build
+usbkey-osx/CommandLineTool/Packages
