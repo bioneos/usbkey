@@ -18,6 +18,8 @@ class IOUSBDetector {
     let vendorID: Int
     let productID: Int
     
+    private var dadisk : DADisk?
+    
     private let internalQueueFS : DispatchQueue?
     
     //asychronous thread (1) to run the anonymous function - callback
@@ -147,7 +149,7 @@ class IOUSBDetector {
             { (streamRef, clientCallBack, numEvents, eventPaths, eventFlags, eventIds) in
                 let detector : IOUSBDetector = unsafeBitCast(clientCallBack, to: IOUSBDetector.self)
                 let usbPath = detector.diskPathDA
-                usbkey_InsertCtl(keyPath: "key", diskPath: usbPath)
+                usbkey_InsertCtl(keyPath: "key", diskPath: usbPath, dadisk: detector.dadisk)
                 FSEventStreamStop(streamRef)
                 FSEventStreamInvalidate(streamRef)
                 
@@ -158,10 +160,22 @@ class IOUSBDetector {
         { (disk, context) in
             let detector = Unmanaged<IOUSBDetector>.fromOpaque(context!).takeUnretainedValue()
             let diskDict  = DADiskCopyDescription(disk)
+            
+            // volume name like disk2 or disk2s1
+            let diskname = String(cString: DADiskGetBSDName(disk)!)
+            if #available(OSX 10.12, *) {
+                //let nsError = error as NSError
+                os_log("Name of Volume %s", log: OSLog.default, type: .info, diskname)
+            } else {
+                // Fallback on earlier versions
+                NSLog("Name of Volume %s", diskname)
+            }
+            
             var newPath = "/Volumes/"
             let cfarray = [newPath] as CFArray
             if let name = (diskDict as! NSDictionary)[kDADiskDescriptionVolumeNameKey] as! String? {
                 // creates FSEventStream Notifcation variable
+                detector.dadisk = disk
                 newPath = "/Volumes/" + name + "/"
                 detector.diskPathDA = newPath // the path to the mount usbkey
                 var selfPtrFS : FSEventStreamContext = FSEventStreamContext(version: 0, info: context, retain: nil, release: nil, copyDescription: nil)
@@ -434,7 +448,7 @@ func usbkey_removeCtl (usbkey_root: String = "usbkey"){
  * Decrypts Image and add rsa keys to ssh
  * Ejects both the image and usb after process is done
  */
-func usbkey_InsertCtl(keyPath: String, diskPath : String?, usbkey_root : String = "usbkey/"){
+func usbkey_InsertCtl(keyPath: String, diskPath : String?, usbkey_root : String = "usbkey/", dadisk: DADisk?){
     // genetics paths needed for insert
     let mount_point : String = "/Volumes/usbkey/" //where the encrypted image will mounted to when decrypted
     let fileManager = FileManager.default
@@ -452,7 +466,7 @@ func usbkey_InsertCtl(keyPath: String, diskPath : String?, usbkey_root : String 
             // Fallback on earlier versions
             NSLog("Error - Directory ~/Library/ can't be find %{errno}d", errno)
         }
-        eject(diskPath: diskPath!, override: true)
+        eject(diskPath: diskPath!, override: true, dadisk: dadisk)
         return
     }
     
@@ -476,7 +490,7 @@ func usbkey_InsertCtl(keyPath: String, diskPath : String?, usbkey_root : String 
                 NSLog("Directory for %s couldn't be created. Error - %{errno}d", keyPath, errno)
             }
             
-            eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!)
+            eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
             return
         }
     }
@@ -527,7 +541,7 @@ func usbkey_InsertCtl(keyPath: String, diskPath : String?, usbkey_root : String 
                 // Fallback on earlier versions
                 NSLog("Error - Dirctory %s suddenly disppeared. Error - %{error}d", mount_point, errno)
             }
-            eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!)
+            eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
             return
         }
     }
@@ -558,10 +572,13 @@ func usbkey_InsertCtl(keyPath: String, diskPath : String?, usbkey_root : String 
     
     // Ejects usbkey
     // TODO add condition to check for EJECT file to eject
-    eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!)
+    eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
 }
 
-func ejectHelper (diskPath : String){
+func ejectHelper (diskPath : String, dadisk: DADisk?){
+    let wholeDisk = DADiskCopyWholeDisk(dadisk!)
+    DADiskUnmount(dadisk!, DADiskUnmountOptions(kDADiskUnmountOptionForce), nil, nil)
+    DADiskEject(wholeDisk!, DADiskEjectOptions(kDADiskEjectOptionDefault), nil, nil)
     let (terminationStatus, output) = shell("diskutil", "eject", diskPath)
     if #available(OSX 10.12, *) {
         os_log("diskutl eject %s: %s, Status - %d", log: OSLog.default,
@@ -572,7 +589,7 @@ func ejectHelper (diskPath : String){
     }
 }
 
-func eject(fullUSBRoot : URL? = nil, diskPath : String, override : Bool = false){
+func eject(fullUSBRoot : URL? = nil, diskPath : String, override : Bool = false, dadisk: DADisk?){
     if (override){
         if #available(OSX 10.12, *) {
             os_log("Without EJECT file" , log: OSLog.default, type: .info)
@@ -580,12 +597,12 @@ func eject(fullUSBRoot : URL? = nil, diskPath : String, override : Bool = false)
             // Fallback on earlier versions
             NSLog("Without Eject file")
         }
-        ejectHelper(diskPath: diskPath)
+        ejectHelper(diskPath: diskPath, dadisk: dadisk)
     }
     else {
         let (_, file) = checkFileDirectoryExist(fullPath: fullUSBRoot!.appendingPathComponent("EJECT").path)
         if (file){
-            ejectHelper(diskPath: diskPath)
+            ejectHelper(diskPath: diskPath, dadisk: dadisk)
         }
     }
 }
