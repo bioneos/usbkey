@@ -19,41 +19,47 @@ class IOUSBDetector
   private let vendorID: Int
   private let productID: Int
   
-  // schedules IOService objects or matching notfications on a sychronous thread (1)
+  // schedules IOService objects or matching notfications on a thread (1)
   private let queueIO: DispatchQueue
   
-  //use default ports to create a notification object to communication with IOkit
+  // use default ports to create a notification object to communication with IOkit
   private let notifyPort: IONotificationPortRef
   
-  //notification iterator which holds new removed notification from IOService
-  private var removedIterator: io_iterator_t = 0
+  // notification iterator which holds new removed notification from IOService
+  private var removedIterator: io_iterator_t
   
-  //thread (2) to schedule DASession to run Callback functions like DescriptionChangedCallback
+  // thread (2) to schedule DASession to run Callback functions like DescriptionChangedCallback
   private let queueDA : DispatchQueue?
   
-  //session for register events for disk arbitration like disk appearance
+  // session for register events for disk arbitration like disk appearance
   private let session : DASession?
   
-  
+  // constructor
   init? ( vendorID: Int, productID: Int )
   {
     self.vendorID = vendorID
     self.productID = productID
     
+    // sets iterator to no remaining io_object_t
+    removedIterator = 0
     
     // Setting up the DASession to detect insertion of usb device
-    queueDA = DispatchQueue.global(qos: DispatchQoS.QoSClass.background) /*(label: "IODADetector")*/
+    queueDA = DispatchQueue.global(qos: DispatchQoS.QoSClass.background)
     
+    // creates session
     session = DASessionCreate(CFAllocatorGetDefault().takeRetainedValue())
     
-    
-    //setups the session to capture registered events
+    // setups the session to capture registered events
     DASessionSetDispatchQueue(session!, queueDA)
     
     // Setting up IOkit port to detect removal of usb device
     queueIO = DispatchQueue.global(qos: DispatchQoS.QoSClass.default) /*(label: "IODetector")*/
     let notifyPort = IONotificationPortCreate(kIOMasterPortDefault)
-    guard notifyPort != nil else { return nil } //checking for errors
+    guard notifyPort != nil else
+    {
+      // checking for errors
+      return nil
+    }
     self.notifyPort = notifyPort!
     
     //setup the dispatch queue to capture io notifications
@@ -63,13 +69,13 @@ class IOUSBDetector
   deinit
   {
     //when program is Removed removes all iokit objects
-    self.stopDetection()
+    stopDetection()
   }
   
   /*
    * starts up detections by add matching notifications for insert and removing of the physical usb
    */
-  func startDetection ( ) -> Bool
+  func startDetection () -> Bool
   {
     guard removedIterator == 0 else
     {
@@ -92,9 +98,9 @@ class IOUSBDetector
      * Callback Functions
      */
     
-    // callback function - DiskAppearedCallback function parameter that is used to create and set FSEventStream
+    // callback function - DADiskDescriptionChangedCallback function parameter that call usbkeyInsertCtl
     let diskcallback : DADiskDescriptionChangedCallback = {
-      (disk, array, context) in
+      (disk, watch, context) in
       let diskDict  = DADiskCopyDescription(disk)
       
       // volume name like disk2s1
@@ -109,18 +115,18 @@ class IOUSBDetector
         NSLog("Name of Volume %s", diskname)
       }
       
-      let volumeArray = array as Array
+      // gets the mounted disk volume path from the list of changed keys array watch
+      let volumeArray = watch as Array
       let volumeIndex : CFString = volumeArray[0] as! CFString
-      if let nsDict = diskDict as? [NSString: Any]
+      if let dictionary = diskDict as? [NSString: Any]
       {
-        if let volumePath = nsDict[volumeIndex] as! URL?
+        if let volumePath = dictionary[volumeIndex] as! URL?
         {
           usbkeyInsertCtl(keyPath: "key", diskPath: volumePath.path, dadisk: disk)
         }
       }
       
     }
-    
     
     /*
      * callback functions for removal a specific usb that are calls dispatchEvent
@@ -151,17 +157,17 @@ class IOUSBDetector
      * added correctly
      */
     let removeAddNotificationStatus = IOServiceAddMatchingNotification(
-      self.notifyPort, kIOTerminatedNotification,
+      notifyPort, kIOTerminatedNotification,
       matchingDict, ioRemoveCallback, selfPtr, &removedIterator
     )
     
     // Checks if there was an error in the configuration of remove notifications
     guard removeAddNotificationStatus == 0 else
     {
-      if self.removedIterator != 0
+      if removedIterator != 0
       {
-        IOObjectRelease(self.removedIterator)
-        self.removedIterator = 0
+        IOObjectRelease(removedIterator)
+        removedIterator = 0
       }
       
       if #available(OSX 10.12, *)
@@ -180,6 +186,7 @@ class IOUSBDetector
     }
     
     // This is required even if nothing was found to "arm" the callback
+    // sets io_iterator to a ready io_object_t to be receive for an event
     IOIteratorNext(removedIterator)
     
     
@@ -251,8 +258,8 @@ func decryptImage(keyPath: URL, sparsePath: String) -> Void
   
   let process = Process()
   process.launchPath = "/usr/bin/env"
-  process.arguments =  ["hdiutil", "attach", "-stdinpass", urlDevice.path + "/osx.sparseimage"]
-  process.standardInput = fileHandle
+  process.arguments =  ["hdiutil", "attach", "-stdinpass", urlDevice.path + "/osx.sparseimage"] // arguments to run decryptions
+  process.standardInput = fileHandle // standard input holding the key to be pass for decryptions
   
   let out = Pipe()
   process.standardOutput = out
@@ -327,7 +334,6 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
   {
     if #available(OSX 10.12, *)
     {
-      //let nsError = error as NSError
       os_log("Directory ~/Library/ can't be find. Error - %{errno}d", log: OSLog.default, type: .info, errno)
     }
     else
@@ -378,10 +384,11 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
       return
     }
   }
+  
   // goes to sleep mode
   // shell("pmset", "displaysleepnow")
   
-  // lockscreen
+  // lockscreen/logs off
   shell("-suspend", launchPath: "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession")
   if #available(OSX 10.12, *)
   {
@@ -413,7 +420,7 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
 func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String = "usbkey/", dadisk: DADisk?)
 {
   // genetics paths needed for insert
-  let mount_point : String = "/Volumes/usbkey/" //where the encrypted image will mounted to when decrypted
+  let mountPoint : String = "/Volumes/usbkey/" //where the encrypted image will mounted to when decrypted
   let fileManager = FileManager.default
   var libraryDirectory : URL
   var fullUSBRoot : URL
@@ -485,17 +492,17 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
   
   
   // adds rsa keys to ssh from the decrypted image
-  (directory, _) = checkFileDirectoryExist(fullPath: mount_point)
+  (directory, _) = checkFileDirectoryExist(fullPath: mountPoint)
   if (directory)
   {
     do
     {
-      let files = try fileManager.contentsOfDirectory(atPath: mount_point)
+      let files = try fileManager.contentsOfDirectory(atPath: mountPoint)
       for key in files
       {
         if (key[key.startIndex] != ".")
         {
-          shell("ssh-add", "-t", "7200", String(mount_point + key)) //adds rsa key to ssh
+          shell("ssh-add", "-t", "7200", String(mountPoint + key)) //adds rsa key to ssh
           if #available(OSX 10.12, *)
           {
             os_log("Add key %s", log: OSLog.default, type: .info, key)
@@ -508,29 +515,18 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
         }
       }
       
-      let (_, output) = shell("ssh-add", "-l") // shows current ssh keys in user ssh
-      if #available(OSX 10.12, *)
-      {
-        os_log("ssh-add -l: %s", log: OSLog.default, type: .info, output!)
-      }
-      else
-      {
-        // Fallback on earlier versions
-        NSLog("ssh-add -l: %s", output!)
-      }
-      
     }
     catch
     {
       // if directory that contains rsa doesn't exist error will occur
       if #available(OSX 10.12, *)
       {
-        os_log("Dirctory %s suddenly disppeared. Error - %{errno}d", log: OSLog.default, type: .error, mount_point, errno)
+        os_log("Dirctory %s suddenly disppeared. Error - %{errno}d", log: OSLog.default, type: .error, mountPoint, errno)
       }
       else
       {
         // Fallback on earlier versions
-        NSLog("Error - Dirctory %s suddenly disppeared. Error - %{error}d", mount_point, errno)
+        NSLog("Error - Dirctory %s suddenly disppeared. Error - %{error}d", mountPoint, errno)
       }
       eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
       return
@@ -553,16 +549,16 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
   }
   
   // Eject SPARSE device
-  let (terminationStatus, output) = shell("hdiutil", "eject", mount_point)
+  let (terminationStatus, output) = shell("hdiutil", "eject", mountPoint)
   if #available(OSX 10.12, *)
   {
     os_log("hdiutil eject %s: %s, Status - %d", log: OSLog.default,
-           type: .info, mount_point, output!, terminationStatus)
+           type: .info, mountPoint, output!, terminationStatus)
   }
   else
   {
     // Fallback on earlier versions
-    NSLog("diskutl eject %s: %s, Status - %d", mount_point, output!, terminationStatus)
+    NSLog("diskutl eject %s: %s, Status - %d", mountPoint, output!, terminationStatus)
   }
   
   // Create Insertion hint
