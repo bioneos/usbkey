@@ -14,6 +14,9 @@ import os.log
  */
 class IOUSBDetector
 {
+  // static variable for the identifications for a Sandisk Cruzer Fit usb
+  static let SANDISKID : Int = 0x0781
+  static let CRUZERFITID : Int = 0x5571
   
   // how usb device is identified
   private let vendorID: Int
@@ -105,15 +108,7 @@ class IOUSBDetector
       
       // volume name like disk2s1
       let diskname = String(cString: DADiskGetBSDName(disk)!)
-      if #available(OSX 10.12, *)
-      {
-        os_log("Name of Volume %s", log: OSLog.default, type: .info, diskname)
-      }
-      else
-      {
-        // Fallback on earlier versions
-        NSLog("Name of Volume %s", diskname)
-      }
+      logger("Name of Volume %@", "Info", diskname)
       
       // gets the mounted disk volume path from the list of changed keys array watch
       let volumeArray = watch as Array
@@ -125,7 +120,6 @@ class IOUSBDetector
           usbkeyInsertCtl(keyPath: "key", diskPath: volumePath.path, dadisk: disk)
         }
       }
-      
     }
     
     /*
@@ -170,18 +164,9 @@ class IOUSBDetector
         removedIterator = 0
       }
       
-      if #available(OSX 10.12, *)
-      {
-        os_log("Detection Fails to Start", log: OSLog.default, type: .info)
-        os_log("IOService Remove Matching Notification Setup Failed to Setup Error %zd",
-               log: OSLog.default, type: .error, removeAddNotificationStatus)
-      }
-      else
-      {
-        // Fallback on earlier versions
-        NSLog("Detection Fails to Start")
-        NSLog("IOService Remove Matching Notification Setup Failed Error %zd", removeAddNotificationStatus)
-      }
+      logger("Detection Fails to Start", "Info")
+      logger("IOService Remove Matching Notification Setup Failed to Setup Error %@", "Error", removeAddNotificationStatus)
+      
       return false
     }
     
@@ -212,17 +197,8 @@ class IOUSBDetector
     IOObjectRelease(self.removedIterator)
     self.removedIterator = 0
     
-    if #available(OSX 10.12, *)
-    {
-      os_log("Stop Detection", log: OSLog.default, type: .info)
-    }
-    else
-    {
-      // Fallback on earlier versions
-      NSLog("Stop Detection")
-    }
+    logger("Stop Detection", "Info")
   }
-  
 }
 
 // Helper functions
@@ -231,7 +207,7 @@ class IOUSBDetector
  * Runs shell commands
  */
 @discardableResult
-func shell(_ args: String... , launchPath : String = "/usr/bin/env") -> (Int32, String?)
+func shell(_ launchPath : String = "/usr/bin/env", stdInput: FileHandle? = nil, args: String...) -> (Int32, String?)
 {
   let task = Process()
   let pipe = Pipe()
@@ -239,6 +215,9 @@ func shell(_ args: String... , launchPath : String = "/usr/bin/env") -> (Int32, 
   task.launchPath = launchPath
   task.arguments = args
   task.standardOutput = pipe
+  if let input = stdInput {
+    task.standardInput = input
+  }
   task.launch()
   
   let data = pipe.fileHandleForReading.readDataToEndOfFile()
@@ -247,40 +226,6 @@ func shell(_ args: String... , launchPath : String = "/usr/bin/env") -> (Int32, 
   
   return (task.terminationStatus, output)
 }
-
-/*
- * Decrypts and attach image to disk
- */
-func decryptImage(keyPath: URL, sparsePath: String) -> Void
-{
-  let fileHandle = FileHandle(forReadingAtPath: keyPath.path)
-  let urlDevice = URL(fileURLWithPath: sparsePath)
-  
-  let process = Process()
-  process.launchPath = "/usr/bin/env"
-  process.arguments =  ["hdiutil", "attach", "-stdinpass", urlDevice.path + "/osx.sparseimage"] // arguments to run decryptions
-  process.standardInput = fileHandle // standard input holding the key to be pass for decryptions
-  
-  let out = Pipe()
-  process.standardOutput = out
-  process.launch()
-  
-  let data = out.fileHandleForReading.readDataToEndOfFile()
-  let output = NSString(data: data, encoding: String.Encoding.utf8.rawValue)
-  process.waitUntilExit()
-  
-  if #available(OSX 10.12, *)
-  {
-    os_log("Output of Pipeline (printf $(cat keyPath) | hdiutil attach -stdnipass osx.sparseimage). Output - %s",
-           log: OSLog.default, type: .info, output ?? "No Output")
-  }
-  else
-  {
-    // Fallback on earlier versions
-    NSLog("Output of Pipeline (printf $(cat keyPath) | hdiutil attach -stdnipass osx.sparseimage). Output - %s",  output ?? "No Output")
-  }
-}
-
 /*
  * Returns if file/directory and determines which one it is
  */
@@ -311,7 +256,7 @@ func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool)
 
 
 
-//Control Usbkey Functions
+// Control Usbkey Functions
 
 /**
  * Controls usbkey events when usb is removed from the computer
@@ -332,15 +277,7 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
   }
   catch
   {
-    if #available(OSX 10.12, *)
-    {
-      os_log("Directory ~/Library/ can't be find. Error - %{errno}d", log: OSLog.default, type: .info, errno)
-    }
-    else
-    {
-      // Fallback on earlier versions
-      NSLog("Error - Directory ~/Library/ can't be find. Error - %{errno}d", errno)
-    }
+    logger("Directory ~/Library/ can't be find. Error - %@", "Error")
     return
   }
   
@@ -350,16 +287,7 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
   let (_, file) = checkFileDirectoryExist(fullPath: fullUSBRoot.appendingPathComponent("INSERTED").path )
   if (!file)
   {
-    if #available(OSX 10.12, *)
-    {
-      //let nsError = error as NSError
-      os_log("Can't find file path %s" , log: OSLog.default, type: .info, fullUSBRoot.appendingPathComponent("INSERTED").path)
-    }
-    else
-    {
-      // Fallback on earlier versions
-      NSLog("Can't find file path %s", fullUSBRoot.appendingPathComponent("INSERTED").path)
-    }
+    logger("Can't find file path %@", "Info", fullUSBRoot.appendingPathComponent("INSERTED").path)
     return
   }
   else
@@ -371,16 +299,7 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
     catch
     {
       // fails if file did exist but suddenly disappears
-      if #available(OSX 10.12, *)
-      {
-        //let nsError = error as NSError
-        os_log("INSERTED file located at %s Dissappeared. Error - %{errno}d", log: OSLog.default, type: .error, fullUSBRoot.path, errno)
-      }
-      else
-      {
-        // Fallback on earlier versions
-        NSLog("Error - INSERTED file located at %s Dissappeared. Error - %{errno}d", fullUSBRoot.path, errno)
-      }
+      logger("INSERTED file located at %@ Dissappeared. Error - %@", "Error", fullUSBRoot.path, errno)
       return
     }
   }
@@ -389,28 +308,12 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
   // shell("pmset", "displaysleepnow")
   
   // lockscreen/logs off
-  shell("-suspend", launchPath: "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession")
-  if #available(OSX 10.12, *)
-  {
-    os_log("Lockscreen", log: OSLog.default, type: .info)
-  }
-  else
-  {
-    // Fallback on earlier versions
-    NSLog("Lockscreen")
-  }
+  shell("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", args: "-suspend")
+  logger("Lockscreen", "Info")
   
   // removes all keys from ssh
-  shell("ssh-add", "-D")
-  if #available(OSX 10.12, *)
-  {
-    os_log("ssh-add -D: Removed all RSA keys", log: OSLog.default, type: .info)
-  }
-  else
-  {
-    // Fallback on earlier versions
-    NSLog("ssh-add -D: Removed all RSA keys")
-  }
+  shell(args: "ssh-add", "-D")
+  logger("ssh-add -D: Removed all RSA keys", "Info")
 }
 /**
  * Controls usbkey events when usb is inserted into the computer
@@ -431,15 +334,7 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
   }
   catch
   {
-    if #available(OSX 10.12, *)
-    {
-      os_log("Directory ~/Library/ can't be find. Error - %{errno}d", log: OSLog.default, type: .error, errno)
-    }
-    else
-    {
-      // Fallback on earlier versions
-      NSLog("Error - Directory ~/Library/ can't be find %{errno}d", errno)
-    }
+    logger("Directory ~/Library/ can't be find. Error - %@", "Error", errno)
     eject(diskPath: diskPath!, override: true, dadisk: dadisk)
     return
   }
@@ -458,18 +353,8 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
     }
     catch
     {
-      // TODO add logs and display saying that directory keyPath couldn't be created
-      if #available(OSX 10.12, *)
-      {
-        //let nsError = error as NSError
-        os_log("Directory for %s couldn't be created. Error - %{errno}d", log: OSLog.default, type: .error, keyPath, errno)
-      }
-      else
-      {
-        // Fallback on earlier versions
-        NSLog("Directory for %s couldn't be created. Error - %{errno}d", keyPath, errno)
-      }
-      
+      // directory keyPath couldn't be created
+      logger("Directory for %@ couldn't be created. Error - %@", "Error", keyPath, errno)
       eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
       return
     }
@@ -478,17 +363,12 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
   
   
   // Decrypt the SPARSE image (using the keyfile)
-  if #available(OSX 10.12, *)
-  {
-    os_log("Decrypting Sparse Image", log: OSLog.default, type: .info)
-  }
-  else
-  {
-    // Fallback on earlier versions
-    NSLog("Decrypting Sparse Image")
-  }
+  logger("Decrypting Sparse Image", "Info")
   let path = fullUSBRoot.appendingPathComponent(keyPath)
-  decryptImage(keyPath: path , sparsePath: diskPath!)
+  let fileHandle = FileHandle(forReadingAtPath: path.path)
+  let urlDevice = URL(fileURLWithPath: diskPath!)
+  shell(stdInput: fileHandle, args: "hdiutil", "attach", "-stdinpass", urlDevice.path + "/osx.sparseimage")
+  
   
   
   // adds rsa keys to ssh from the decrypted image
@@ -502,64 +382,27 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
       {
         if (key[key.startIndex] != ".")
         {
-          shell("ssh-add", "-t", "7200", String(mountPoint + key)) //adds rsa key to ssh
-          if #available(OSX 10.12, *)
-          {
-            os_log("Add key %s", log: OSLog.default, type: .info, key)
-          }
-          else
-          {
-            // Fallback on earlier versions
-            NSLog("Add key %s", key)
-          }
+          shell(args: "ssh-add", "-t", "7200", String(mountPoint + key))
+          logger("Add key %@", "Info", key)
         }
       }
-      
     }
     catch
     {
       // if directory that contains rsa doesn't exist error will occur
-      if #available(OSX 10.12, *)
-      {
-        os_log("Dirctory %s suddenly disppeared. Error - %{errno}d", log: OSLog.default, type: .error, mountPoint, errno)
-      }
-      else
-      {
-        // Fallback on earlier versions
-        NSLog("Error - Dirctory %s suddenly disppeared. Error - %{error}d", mountPoint, errno)
-      }
+      logger("Dirctory %@ suddenly disppeared. Error - %@", "Error", mountPoint, errno)
       eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
       return
     }
   }
   else
   {
-    if #available(OSX 10.12, *)
-    {
-      //let nsError = error as NSError
-      os_log("Image didn't decrypt correctly/Image doesn't exist", log: OSLog.default, type: .info)
-    }
-    else
-    {
-      // Fallback on earlier versions
-      NSLog("Image didn't decrypt correctly/Image doesn't exist")
-    }
-    
-    
+    logger("Image didn't decrypt correctly/Image doesn't exist", "Info")
   }
   
   // Eject SPARSE device
-  let (terminationStatus, output) = shell("hdiutil", "eject", mountPoint)
-  if #available(OSX 10.12, *)
-  {
-    os_log("hdiutil eject %s: %s, Status - %d", log: OSLog.default,
-           type: .info, mountPoint, output!, terminationStatus)
-  }
-  else
-  {
-    // Fallback on earlier versions
-    NSLog("diskutl eject %s: %s, Status - %d", mountPoint, output!, terminationStatus)
-  }
+  let (terminationStatus, output) = shell(args: "hdiutil", "eject", mountPoint)
+  logger("hdiutil eject %@: %@, Status - %@", "Info", mountPoint, output!, terminationStatus)
   
   // Create Insertion hint
   fileManager.createFile(atPath: fullUSBRoot.appendingPathComponent("INSERTED").path , contents: nil, attributes: nil)
@@ -569,53 +412,37 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
   eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
 }
 
-func ejectHelper (diskPath : String, dadisk: DADisk?)
+func eject(fullUSBRoot : URL? = nil, diskPath : String, override : Bool = false, dadisk: DADisk?)
 {
-  let wholeDisk = DADiskCopyWholeDisk(dadisk!)
-  DADiskUnmount(dadisk!, DADiskUnmountOptions(kDADiskUnmountOptionForce), nil, nil)
-  DADiskEject(wholeDisk!, DADiskEjectOptions(kDADiskEjectOptionDefault), nil, nil)
+  let (_, file) = checkFileDirectoryExist(fullPath: fullUSBRoot!.appendingPathComponent("EJECT").path)
+  if (file || override)
+  {
+    let wholeDisk = DADiskCopyWholeDisk(dadisk!)
+    DADiskUnmount(dadisk!, DADiskUnmountOptions(kDADiskUnmountOptionForce), nil, nil)
+    DADiskEject(wholeDisk!, DADiskEjectOptions(kDADiskEjectOptionDefault), nil, nil)
+    logger("diskutl eject %@", "Info", diskPath)
+  }
+}
+
+func logger(_ description: StaticString, _ type: String, _ args: CVarArg...)
+{
   
   if #available(OSX 10.12, *)
   {
-    os_log("diskutl eject %s", log: OSLog.default, type: .info, diskPath)
+    let customLog = OSLog(subsystem: "com.bioneos.usbkey_osx", category: "usbkey")
+    let types : [String: OSLogType] = ["Info": .info, "Debug": .debug, "Error": .error]
+    os_log(description, log: customLog, type: types[type] ?? .default, args)
   }
   else
   {
-    // Fallback on earlier versions
-    NSLog("diskutl eject %s", diskPath)
+     NSLog("\(type)" + " – " + "\(description)", args)
   }
 }
-
-func eject(fullUSBRoot : URL? = nil, diskPath : String, override : Bool = false, dadisk: DADisk?){
-  if (override)
-  {
-    if #available(OSX 10.12, *)
-    {
-      os_log("Without EJECT file" , log: OSLog.default, type: .info)
-    }
-    else
-    {
-      // Fallback on earlier versions
-      NSLog("Without Eject file")
-    }
-    ejectHelper(diskPath: diskPath, dadisk: dadisk)
-  }
-  else
-  {
-    let (_, file) = checkFileDirectoryExist(fullPath: fullUSBRoot!.appendingPathComponent("EJECT").path)
-    if (file)
-    {
-      ejectHelper(diskPath: diskPath, dadisk: dadisk)
-    }
-  }
-}
-
-
 
 /*
  * the driver that will be run or simply the main function
  */
-let usbEventDetector = IOUSBDetector(vendorID: 0x0781, productID: 0x5571)
+let usbEventDetector = IOUSBDetector(vendorID: IOUSBDetector.SANDISKID, productID: IOUSBDetector.CRUZERFITID)
 _ = usbEventDetector?.startDetection()
 
 RunLoop.main.run()
