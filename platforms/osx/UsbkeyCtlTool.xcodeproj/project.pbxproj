@@ -11,7 +11,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		D6DAEB5F21839FFE006E49F8 /* CommandLineTool */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; name = CommandLineTool; path = "/Users/malyon/workspace/git-usbkey/platforms/osx/build/Debug/CommandLineTool"; sourceTree = "<absolute>"; };
+		17CD4DBF21875CB1009329C6 /* UsbkeyCtlTool */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = UsbkeyCtlTool; sourceTree = BUILT_PRODUCTS_DIR; };
 		OBJ_6 /* Package.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; path = Package.swift; sourceTree = "<group>"; };
 		OBJ_9 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -32,32 +32,33 @@
 			children = (
 				OBJ_6 /* Package.swift */,
 				OBJ_7 /* Sources */,
+				17CD4DBF21875CB1009329C6 /* UsbkeyCtlTool */,
 			);
 			sourceTree = "<group>";
 		};
 		OBJ_7 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				OBJ_8 /* CommandLineTool */,
+				OBJ_8 /* UsbkeyCtlTool */,
 			);
 			name = Sources;
 			sourceTree = SOURCE_ROOT;
 		};
-		OBJ_8 /* CommandLineTool */ = {
+		OBJ_8 /* UsbkeyCtlTool */ = {
 			isa = PBXGroup;
 			children = (
 				OBJ_9 /* main.swift */,
 			);
-			name = CommandLineTool;
-			path = Sources/CommandLineTool;
+			name = UsbkeyCtlTool;
+			path = Sources/UsbkeyCtlTool;
 			sourceTree = SOURCE_ROOT;
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		"CommandLineTool::CommandLineTool" /* CommandLineTool */ = {
+		"CommandLineTool::CommandLineTool" /* UsbkeyCtlTool */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = OBJ_18 /* Build configuration list for PBXNativeTarget "CommandLineTool" */;
+			buildConfigurationList = OBJ_18 /* Build configuration list for PBXNativeTarget "UsbkeyCtlTool" */;
 			buildPhases = (
 				OBJ_21 /* Sources */,
 				OBJ_23 /* Frameworks */,
@@ -66,14 +67,14 @@
 			);
 			dependencies = (
 			);
-			name = CommandLineTool;
+			name = UsbkeyCtlTool;
 			productName = CommandLineTool;
-			productReference = D6DAEB5F21839FFE006E49F8 /* CommandLineTool */;
+			productReference = 17CD4DBF21875CB1009329C6 /* UsbkeyCtlTool */;
 			productType = "com.apple.product-type.tool";
 		};
-		"CommandLineTool::SwiftPMPackageDescription" /* CommandLineToolPackageDescription */ = {
+		"CommandLineTool::SwiftPMPackageDescription" /* UsbkeyCtlToolPackageDescription */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = OBJ_25 /* Build configuration list for PBXNativeTarget "CommandLineToolPackageDescription" */;
+			buildConfigurationList = OBJ_25 /* Build configuration list for PBXNativeTarget "UsbkeyCtlToolPackageDescription" */;
 			buildPhases = (
 				OBJ_28 /* Sources */,
 			);
@@ -81,7 +82,7 @@
 			);
 			dependencies = (
 			);
-			name = CommandLineToolPackageDescription;
+			name = UsbkeyCtlToolPackageDescription;
 			productName = CommandLineToolPackageDescription;
 			productType = "com.apple.product-type.framework";
 		};
@@ -93,7 +94,7 @@
 			attributes = {
 				LastUpgradeCheck = 9999;
 			};
-			buildConfigurationList = OBJ_2 /* Build configuration list for PBXProject "CommandLineTool" */;
+			buildConfigurationList = OBJ_2 /* Build configuration list for PBXProject "UsbkeyCtlTool" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
@@ -105,8 +106,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				"CommandLineTool::CommandLineTool" /* CommandLineTool */,
-				"CommandLineTool::SwiftPMPackageDescription" /* CommandLineToolPackageDescription */,
+				"CommandLineTool::CommandLineTool" /* UsbkeyCtlTool */,
+				"CommandLineTool::SwiftPMPackageDescription" /* UsbkeyCtlToolPackageDescription */,
 			);
 		};
 /* End PBXProject section */
@@ -143,6 +144,7 @@
 				OTHER_CFLAGS = "$(inherited)";
 				OTHER_LDFLAGS = "$(inherited)";
 				OTHER_SWIFT_FLAGS = "$(inherited)";
+				PRODUCT_NAME = UsbkeyCtlTool;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_FORCE_DYNAMIC_LINK_STDLIB = YES;
 				SWIFT_FORCE_STATIC_LINK_STDLIB = NO;
@@ -164,6 +166,7 @@
 				OTHER_CFLAGS = "$(inherited)";
 				OTHER_LDFLAGS = "$(inherited)";
 				OTHER_SWIFT_FLAGS = "$(inherited)";
+				PRODUCT_NAME = UsbkeyCtlTool;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_FORCE_DYNAMIC_LINK_STDLIB = YES;
 				SWIFT_FORCE_STATIC_LINK_STDLIB = NO;
@@ -177,6 +180,7 @@
 			buildSettings = {
 				LD = /usr/bin/true;
 				OTHER_SWIFT_FLAGS = "-swift-version 4.2 -I $(TOOLCHAIN_DIR)/usr/lib/swift/pm/4_2 -target x86_64-apple-macosx10.10 -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.14.sdk";
+				PRODUCT_NAME = UsbkeyCtlToolPackageDescription;
 				SWIFT_VERSION = 4.2;
 			};
 			name = Debug;
@@ -186,6 +190,7 @@
 			buildSettings = {
 				LD = /usr/bin/true;
 				OTHER_SWIFT_FLAGS = "-swift-version 4.2 -I $(TOOLCHAIN_DIR)/usr/lib/swift/pm/4_2 -target x86_64-apple-macosx10.10 -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.14.sdk";
+				PRODUCT_NAME = UsbkeyCtlToolPackageDescription;
 				SWIFT_VERSION = 4.2;
 			};
 			name = Release;
@@ -239,7 +244,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		OBJ_18 /* Build configuration list for PBXNativeTarget "CommandLineTool" */ = {
+		OBJ_18 /* Build configuration list for PBXNativeTarget "UsbkeyCtlTool" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				OBJ_19 /* Debug */,
@@ -248,7 +253,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		OBJ_2 /* Build configuration list for PBXProject "CommandLineTool" */ = {
+		OBJ_2 /* Build configuration list for PBXProject "UsbkeyCtlTool" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				OBJ_3 /* Debug */,
@@ -257,7 +262,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		OBJ_25 /* Build configuration list for PBXNativeTarget "CommandLineToolPackageDescription" */ = {
+		OBJ_25 /* Build configuration list for PBXNativeTarget "UsbkeyCtlToolPackageDescription" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				OBJ_26 /* Debug */,

@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "CommandLineTool::CommandLineTool"
-               BuildableName = "CommandLineTool"
-               BlueprintName = "CommandLineTool"
-               ReferencedContainer = "container:CommandLineTool.xcodeproj">
+               BuildableName = "UsbkeyCtlTool"
+               BlueprintName = "UsbkeyCtlTool"
+               ReferencedContainer = "container:UsbkeyCtlTool.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -35,7 +35,7 @@
                BlueprintIdentifier = "CommandLineTool::CommandLineToolTests"
                BuildableName = "CommandLineToolTests.xctest"
                BlueprintName = "CommandLineToolTests"
-               ReferencedContainer = "container:CommandLineTool.xcodeproj">
+               ReferencedContainer = "container:UsbkeyCtlTool.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -57,9 +57,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CommandLineTool::CommandLineTool"
-            BuildableName = "CommandLineTool"
-            BlueprintName = "CommandLineTool"
-            ReferencedContainer = "container:CommandLineTool.xcodeproj">
+            BuildableName = "UsbkeyCtlTool"
+            BlueprintName = "UsbkeyCtlTool"
+            ReferencedContainer = "container:UsbkeyCtlTool.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <AdditionalOptions>
@@ -71,12 +71,23 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
+      <BuildableProductRunnable
+         runnableDebuggingMode = "0">
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "CommandLineTool::CommandLineTool"
+            BuildableName = "UsbkeyCtlTool"
+            BlueprintName = "UsbkeyCtlTool"
+            ReferencedContainer = "container:UsbkeyCtlTool.xcodeproj">
+         </BuildableReference>
+      </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">
    </AnalyzeAction>
    <ArchiveAction
       buildConfiguration = "Release"
+      customArchiveName = "UsbkeyCtlTool"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>
