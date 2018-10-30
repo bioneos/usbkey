@@ -21,5 +21,7 @@
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>NSPrincipalClass</key>
   <string></string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>[Some description why you need to use AppleEvents]</string>
 </dict>
 </plist>

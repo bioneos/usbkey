@@ -22,17 +22,14 @@ class IOUSBDetector
   private let vendorID: Int
   private let productID: Int
   
-  // schedules IOService objects or matching notfications on a thread (1)
-  private let queueIO: DispatchQueue
+  // schedules IOService objects/DASession for matching physical notfications/run Callback functions on a thread
+  private let queue: DispatchQueue
   
   // use default ports to create a notification object to communication with IOkit
   private let notifyPort: IONotificationPortRef
   
   // notification iterator which holds new removed notification from IOService
   private var removedIterator: io_iterator_t
-  
-  // thread (2) to schedule DASession to run Callback functions like DescriptionChangedCallback
-  private let queueDA : DispatchQueue?
   
   // session for register events for disk arbitration like disk appearance
   private let session : DASession?
@@ -47,16 +44,15 @@ class IOUSBDetector
     removedIterator = 0
     
     // Setting up the DASession to detect insertion of usb device
-    queueDA = DispatchQueue.global(qos: DispatchQoS.QoSClass.background)
+    queue = DispatchQueue.global(qos: DispatchQoS.QoSClass.default) /*(label: "IODetector")*/
     
     // creates session
     session = DASessionCreate(CFAllocatorGetDefault().takeRetainedValue())
     
     // setups the session to capture registered events
-    DASessionSetDispatchQueue(session!, queueDA)
+    DASessionSetDispatchQueue(session!, queue)
     
     // Setting up IOkit port to detect removal of usb device
-    queueIO = DispatchQueue.global(qos: DispatchQoS.QoSClass.default) /*(label: "IODetector")*/
     let notifyPort = IONotificationPortCreate(kIOMasterPortDefault)
     guard notifyPort != nil else
     {
@@ -66,7 +62,7 @@ class IOUSBDetector
     self.notifyPort = notifyPort!
     
     //setup the dispatch queue to capture io notifications
-    IONotificationPortSetDispatchQueue(notifyPort, queueIO)
+    IONotificationPortSetDispatchQueue(notifyPort, queue)
   }
   
   deinit
@@ -143,7 +139,7 @@ class IOUSBDetector
     
     // Setup the disk arbiration notification for volume path change
     DARegisterDiskDescriptionChangedCallback(session!,matchingDADict,
-                                             kDADiskDescriptionWatchVolumePath.takeRetainedValue() as CFArray, diskcallback, selfPtr)
+      kDADiskDescriptionWatchVolumePath.takeRetainedValue() as CFArray, diskcallback, selfPtr)
     
     /*
      * Setting the notifications for removing events
@@ -163,7 +159,6 @@ class IOUSBDetector
         IOObjectRelease(removedIterator)
         removedIterator = 0
       }
-      
       logger("Detection Fails to Start", "Info")
       logger("IOService Remove Matching Notification Setup Failed to Setup Error %@", "Error", removeAddNotificationStatus)
       
@@ -174,7 +169,6 @@ class IOUSBDetector
     // sets io_iterator to a ready io_object_t to be receive for an event
     IOIteratorNext(removedIterator)
     
-    
     if #available(OSX 10.12, *)
     {
       os_log("Start Detection", log: OSLog.default, type: .info)
@@ -184,6 +178,17 @@ class IOUSBDetector
       // Fallback on earlier versions
       NSLog("Start Detection")
     }
+    let appleScript = "display notification \"Detection has Started\" with title \"UsbkeyCtl\""
+    var error: NSDictionary?
+    if let scriptAction : NSAppleScript = NSAppleScript(source: appleScript)
+    {
+      scriptAction.executeAndReturnError(&error)
+      if let e = error
+      {
+        logger("%@", "Error", e)
+      }
+    }
+    
     return true
   }
   
@@ -446,4 +451,3 @@ let usbEventDetector = IOUSBDetector(vendorID: IOUSBDetector.SANDISKID, productI
 _ = usbEventDetector?.startDetection()
 
 RunLoop.main.run()
-
