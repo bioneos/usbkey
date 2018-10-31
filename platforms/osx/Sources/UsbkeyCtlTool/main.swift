@@ -67,7 +67,7 @@ class IOUSBDetector
   
   deinit
   {
-    //when program is Removed removes all iokit objects
+    // when program is Removed removes all iokit objects
     stopDetection()
   }
   
@@ -88,7 +88,7 @@ class IOUSBDetector
     
     // match dictionary for usb device insertion of usb model, vendor, and volume used for IOKit
     let matchingDADict : CFDictionary = [kDADiskDescriptionDeviceModelKey as String : "Cruzer Fit",
-                                         kDADiskDescriptionDeviceVendorKey as String : "SanDisk", kDADiskDescriptionVolumeMountableKey as String : 1] as CFDictionary
+      kDADiskDescriptionDeviceVendorKey as String : "SanDisk", kDADiskDescriptionVolumeMountableKey as String : 1] as CFDictionary
     
     // a self pointer used as reference for callback function (DA and IOKit callback functions)
     let selfPtr = Unmanaged.passUnretained(self).toOpaque()
@@ -113,7 +113,7 @@ class IOUSBDetector
       {
         if let volumePath = dictionary[volumeIndex] as! URL?
         {
-          usbkeyInsertCtl(keyPath: "key", diskPath: volumePath.path, dadisk: disk)
+          usbkeyInsertCtl(keyPath: "key", diskPath: volumePath, dadisk: disk)
         }
       }
     }
@@ -133,8 +133,6 @@ class IOUSBDetector
         }
         usbkeyRemoveCtl()
       } while (true)
-      
-      
     };
     
     // Setup the disk arbiration notification for volume path change
@@ -161,7 +159,6 @@ class IOUSBDetector
       }
       logger("Detection Fails to Start", "Info")
       logger("IOService Remove Matching Notification Setup Failed to Setup Error %@", "Error", removeAddNotificationStatus)
-      
       return false
     }
     
@@ -169,26 +166,9 @@ class IOUSBDetector
     // sets io_iterator to a ready io_object_t to be receive for an event
     IOIteratorNext(removedIterator)
     
-    if #available(OSX 10.12, *)
-    {
-      os_log("Start Detection", log: OSLog.default, type: .info)
-    }
-    else
-    {
-      // Fallback on earlier versions
-      NSLog("Start Detection")
-    }
-    let appleScript = "display notification \"Detection has Started\" with title \"UsbkeyCtl\""
-    var error: NSDictionary?
-    if let scriptAction : NSAppleScript = NSAppleScript(source: appleScript)
-    {
-      scriptAction.executeAndReturnError(&error)
-      if let e = error
-      {
-        logger("%@", "Error", e)
-      }
-    }
-    
+    // detector starts
+    logger("Start Detection", "Info")
+    shell("/usr/bin/osascript", args: "-e", "display notification \"Start Detection\" with title \"UsbkeyCtl\"")
     return true
   }
   
@@ -259,8 +239,6 @@ func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool)
   }
 }
 
-
-
 // Control Usbkey Functions
 
 /**
@@ -273,20 +251,17 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
 {
   
   let fileManager : FileManager = FileManager.default
-  var libraryDirectory : URL
   let fullUSBRoot : URL
   do
   {
-    libraryDirectory = try fileManager.url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
-    fullUSBRoot = libraryDirectory.appendingPathComponent(usbkey_root)
+    fullUSBRoot = try fileManager.url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil,
+                                      create: false).appendingPathComponent(usbkey_root)
   }
   catch
   {
     logger("Directory ~/Library/ can't be find. Error - %@", "Error")
     return
   }
-  
-  
   
   // checks if INSERT file exist if not error will occur
   let (_, file) = checkFileDirectoryExist(fullPath: fullUSBRoot.appendingPathComponent("INSERTED").path )
@@ -300,6 +275,13 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
     do
     {
       try fileManager.removeItem(at: URL(fileURLWithPath: fullUSBRoot.appendingPathComponent("INSERTED").path))
+      // lockscreen/logs off
+      shell("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", args: "-suspend")
+      logger("Lockscreen", "Info")
+      
+      // removes all keys from ssh
+      shell(args: "ssh-add", "-D")
+      logger("ssh-add -D: Removed all RSA keys", "Info")
     }
     catch
     {
@@ -308,24 +290,13 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
       return
     }
   }
-  
-  // goes to sleep mode
-  // shell("pmset", "displaysleepnow")
-  
-  // lockscreen/logs off
-  shell("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", args: "-suspend")
-  logger("Lockscreen", "Info")
-  
-  // removes all keys from ssh
-  shell(args: "ssh-add", "-D")
-  logger("ssh-add -D: Removed all RSA keys", "Info")
 }
 /**
  * Controls usbkey events when usb is inserted into the computer
  * Decrypts Image and add rsa keys to ssh
  * Ejects both the image and usb after process is done
  */
-func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String = "usbkey/", dadisk: DADisk?)
+func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "usbkey/", dadisk: DADisk?)
 {
   // genetics paths needed for insert
   let mountPoint : String = "/Volumes/usbkey/" //where the encrypted image will mounted to when decrypted
@@ -340,7 +311,7 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
   catch
   {
     logger("Directory ~/Library/ can't be find. Error - %@", "Error", errno)
-    eject(diskPath: diskPath!, override: true, dadisk: dadisk)
+    eject(diskPath: diskPath, override: true, dadisk: dadisk)
     return
   }
   
@@ -360,21 +331,15 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
     {
       // directory keyPath couldn't be created
       logger("Directory for %@ couldn't be created. Error - %@", "Error", keyPath, errno)
-      eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
+      eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath, dadisk: dadisk)
       return
     }
   }
   
-  
-  
   // Decrypt the SPARSE image (using the keyfile)
   logger("Decrypting Sparse Image", "Info")
-  let path = fullUSBRoot.appendingPathComponent(keyPath)
-  let fileHandle = FileHandle(forReadingAtPath: path.path)
-  let urlDevice = URL(fileURLWithPath: diskPath!)
-  shell(stdInput: fileHandle, args: "hdiutil", "attach", "-stdinpass", urlDevice.path + "/osx.sparseimage")
-  
-  
+  let fileHandle = FileHandle(forReadingAtPath: fullUSBRoot.appendingPathComponent(keyPath).path)
+  shell(stdInput: fileHandle, args: "hdiutil", "attach", "-stdinpass", diskPath.path + "/osx.sparseimage")
   
   // adds rsa keys to ssh from the decrypted image
   (directory, _) = checkFileDirectoryExist(fullPath: mountPoint)
@@ -391,12 +356,13 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
           logger("Add key %@", "Info", key)
         }
       }
+      shell("/usr/bin/osascript", args: "-e", "display notification \"Keys have been added\" with title \"UsbkeyCtl\"")
     }
     catch
     {
       // if directory that contains rsa doesn't exist error will occur
       logger("Dirctory %@ suddenly disppeared. Error - %@", "Error", mountPoint, errno)
-      eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
+      eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath, dadisk: dadisk)
       return
     }
   }
@@ -413,11 +379,13 @@ func usbkeyInsertCtl(keyPath: String, diskPath : String?, usbkey_root : String =
   fileManager.createFile(atPath: fullUSBRoot.appendingPathComponent("INSERTED").path , contents: nil, attributes: nil)
   
   // Ejects usbkey
-  // TODO add condition to check for EJECT file to eject
-  eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath!, dadisk: dadisk)
+  eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath, dadisk: dadisk)
 }
 
-func eject(fullUSBRoot : URL? = nil, diskPath : String, override : Bool = false, dadisk: DADisk?)
+/**
+ * Ejects and Unmounts disk object from computer
+ */
+func eject(fullUSBRoot : URL? = nil, diskPath : URL, override : Bool = false, dadisk: DADisk?)
 {
   let (_, file) = checkFileDirectoryExist(fullPath: fullUSBRoot!.appendingPathComponent("EJECT").path)
   if (file || override)
@@ -425,13 +393,15 @@ func eject(fullUSBRoot : URL? = nil, diskPath : String, override : Bool = false,
     let wholeDisk = DADiskCopyWholeDisk(dadisk!)
     DADiskUnmount(dadisk!, DADiskUnmountOptions(kDADiskUnmountOptionForce), nil, nil)
     DADiskEject(wholeDisk!, DADiskEjectOptions(kDADiskEjectOptionDefault), nil, nil)
-    logger("diskutl eject %@", "Info", diskPath)
+    logger("diskutl eject %@", "Info", diskPath.path)
   }
 }
 
+/**
+ * sents log messages to the console
+ */
 func logger(_ description: StaticString, _ type: String, _ args: CVarArg...)
 {
-  
   if #available(OSX 10.12, *)
   {
     let customLog = OSLog(subsystem: "com.bioneos.usbkey_osx", category: "usbkey")
