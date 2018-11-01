@@ -264,8 +264,8 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
   }
   
   // checks if INSERT file exist if not error will occur
-  let (_, file) = checkFileDirectoryExist(fullPath: fullUSBRoot.appendingPathComponent("INSERTED").path )
-  if (!file)
+  let (_, isFile) = checkFileDirectoryExist(fullPath: fullUSBRoot.appendingPathComponent("INSERTED").path )
+  if (!isFile)
   {
     logger("Can't find file path %@", "Info", fullUSBRoot.appendingPathComponent("INSERTED").path)
     return
@@ -320,20 +320,12 @@ func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "us
    * Currently it will never run cause directory will always exist before this program will run
    */
   // checks to see if the directory for the key exist  and if not creates it and check if we need to setup USBKey
-  var (directory, _) = checkFileDirectoryExist(fullPath: fullUSBRoot.path)
-  if (!directory)
+  let (_, isFile) = checkFileDirectoryExist(fullPath: fullUSBRoot.path)
+  if (!isFile)
   {
-    do
-    {
-      try fileManager.createDirectory(atPath: fullUSBRoot.path, withIntermediateDirectories: true)
-    }
-    catch
-    {
-      // directory keyPath couldn't be created
-      logger("Directory for %@ couldn't be created. Error - %@", "Error", keyPath, errno)
-      eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath, dadisk: dadisk)
-      return
-    }
+    logger("Key file doesn't exist", "Debug")
+    eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath, dadisk: dadisk)
+    return
   }
   
   // Decrypt the SPARSE image (using the keyfile)
@@ -342,8 +334,8 @@ func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "us
   shell(stdInput: fileHandle, args: "hdiutil", "attach", "-stdinpass", diskPath.path + "/osx.sparseimage")
   
   // adds rsa keys to ssh from the decrypted image
-  (directory, _) = checkFileDirectoryExist(fullPath: mountPoint)
-  if (directory)
+  let (isDirectory, _) = checkFileDirectoryExist(fullPath: mountPoint)
+  if (isDirectory)
   {
     do
     {
@@ -387,8 +379,8 @@ func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "us
  */
 func eject(fullUSBRoot : URL? = nil, diskPath : URL, override : Bool = false, dadisk: DADisk?)
 {
-  let (_, file) = checkFileDirectoryExist(fullPath: fullUSBRoot!.appendingPathComponent("EJECT").path)
-  if (file || override)
+  let (_, isFile) = checkFileDirectoryExist(fullPath: fullUSBRoot!.appendingPathComponent("EJECT").path)
+  if (isFile || override)
   {
     let wholeDisk = DADiskCopyWholeDisk(dadisk!)
     DADiskUnmount(dadisk!, DADiskUnmountOptions(kDADiskUnmountOptionForce), nil, nil)
