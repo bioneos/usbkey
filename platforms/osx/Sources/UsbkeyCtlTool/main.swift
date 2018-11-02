@@ -17,6 +17,8 @@ class IOUSBDetector
   // static variable for the identifications for a Sandisk Cruzer Fit usb
   static let USB_VENDOR_ID : Int = 0x0781
   static let USB_PRODUCT_ID : Int = 0x5571
+  static let USB_VENDOR_KEY : String = "SanDisk"
+  static let USB_PRODUCT_KEY : String = "Cruzer Fit"
   
   // schedules IOService objects/DASession for matching physical notfications/run Callback functions on a thread
   private let queue: DispatchQueue
@@ -31,7 +33,7 @@ class IOUSBDetector
   private let session : DASession?
   
   // constructor
-  init ()
+  init()
   {
     // sets iterator to no remaining io_object_t
     removedIterator = 0
@@ -62,7 +64,7 @@ class IOUSBDetector
   /*
    * starts up detections by add matching notifications for insert and removing of the physical usb
    */
-  func startDetection () -> Bool
+  func startDetection() -> Bool
   {
     guard removedIterator == 0 else
     {
@@ -75,8 +77,9 @@ class IOUSBDetector
     matchingDict[kUSBProductID] = NSNumber(value: IOUSBDetector.USB_PRODUCT_ID)
     
     // match dictionary for usb device insertion of usb model, vendor, and volume used for IOKit
-    let matchingDADict : CFDictionary = [kDADiskDescriptionDeviceModelKey as String : "Cruzer Fit",
-      kDADiskDescriptionDeviceVendorKey as String : "SanDisk", kDADiskDescriptionVolumeMountableKey as String : 1] as CFDictionary
+    let matchingDADict : CFDictionary = [kDADiskDescriptionDeviceModelKey as String : IOUSBDetector.USB_PRODUCT_KEY,
+      kDADiskDescriptionDeviceVendorKey as String : IOUSBDetector.USB_VENDOR_KEY,
+      kDADiskDescriptionVolumeMountableKey as String : 1] as CFDictionary
     
     // a self pointer used as reference for callback function (DA and IOKit callback functions)
     let selfPtr = Unmanaged.passUnretained(self).toOpaque()
@@ -158,7 +161,7 @@ class IOUSBDetector
   }
   
   // Release IO service objects
-  func stopDetection ()
+  func stopDetection()
   {
     guard self.removedIterator != 0 else
     {
