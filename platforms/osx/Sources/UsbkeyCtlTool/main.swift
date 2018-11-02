@@ -15,12 +15,8 @@ import os.log
 class IOUSBDetector
 {
   // static variable for the identifications for a Sandisk Cruzer Fit usb
-  static let SANDISKID : Int = 0x0781
-  static let CRUZERFITID : Int = 0x5571
-  
-  // how usb device is identified
-  private let vendorID: Int
-  private let productID: Int
+  static let USB_VENDOR_ID : Int = 0x0781
+  static let USB_PRODUCT_ID : Int = 0x5571
   
   // schedules IOService objects/DASession for matching physical notfications/run Callback functions on a thread
   private let queue: DispatchQueue
@@ -35,11 +31,8 @@ class IOUSBDetector
   private let session : DASession?
   
   // constructor
-  init? ( vendorID: Int, productID: Int )
+  init ()
   {
-    self.vendorID = vendorID
-    self.productID = productID
-    
     // sets iterator to no remaining io_object_t
     removedIterator = 0
     
@@ -54,11 +47,6 @@ class IOUSBDetector
     
     // Setting up IOkit port to detect removal of usb device
     let notifyPort = IONotificationPortCreate(kIOMasterPortDefault)
-    guard notifyPort != nil else
-    {
-      // checking for errors
-      return nil
-    }
     self.notifyPort = notifyPort!
     
     //setup the dispatch queue to capture io notifications
@@ -83,8 +71,8 @@ class IOUSBDetector
     
     // sets up matching criteria (vendorID & productID) for usb by using a dictionary used for IOKit
     let matchingDict = IOServiceMatching(kIOUSBDeviceClassName) as NSMutableDictionary
-    matchingDict[kUSBVendorID] = NSNumber(value: vendorID)
-    matchingDict[kUSBProductID] = NSNumber(value: productID)
+    matchingDict[kUSBVendorID] = NSNumber(value: IOUSBDetector.USB_VENDOR_ID)
+    matchingDict[kUSBProductID] = NSNumber(value: IOUSBDetector.USB_PRODUCT_ID)
     
     // match dictionary for usb device insertion of usb model, vendor, and volume used for IOKit
     let matchingDADict : CFDictionary = [kDADiskDescriptionDeviceModelKey as String : "Cruzer Fit",
@@ -124,15 +112,12 @@ class IOUSBDetector
      */
     let ioRemoveCallback : IOServiceMatchingCallback? = {
       (userData, iterator) in
-      repeat
+      var nextService = IOIteratorNext(iterator)
+      while (nextService != 0)
       {
-        let nextService = IOIteratorNext(iterator)
-        guard nextService != 0 else
-        {
-          break
-        }
         usbkeyRemoveCtl()
-      } while (true)
+        nextService = IOIteratorNext(iterator)
+      }
     };
     
     // Setup the disk arbiration notification for volume path change
@@ -144,13 +129,13 @@ class IOUSBDetector
      * Returns a status value responding to if the new Notification Service was
      * added correctly
      */
-    let removeAddNotificationStatus = IOServiceAddMatchingNotification(
+    let IONotificationStatus = IOServiceAddMatchingNotification(
       notifyPort, kIOTerminatedNotification,
       matchingDict, ioRemoveCallback, selfPtr, &removedIterator
     )
     
     // Checks if there was an error in the configuration of remove notifications
-    guard removeAddNotificationStatus == 0 else
+    guard IONotificationStatus == 0 else
     {
       if removedIterator != 0
       {
@@ -158,7 +143,7 @@ class IOUSBDetector
         removedIterator = 0
       }
       logger("Detection Fails to Start", "Info")
-      logger("IOService Remove Matching Notification Setup Failed to Setup Error %@", "Error", removeAddNotificationStatus)
+      logger("IOService Remove Matching Notification Setup Failed to Setup Error %@", "Error", IONotificationStatus)
       return false
     }
     
@@ -211,33 +196,6 @@ func shell(_ launchPath : String = "/usr/bin/env", stdInput: FileHandle? = nil, 
   
   return (task.terminationStatus, output)
 }
-/*
- * Returns if file/directory and determines which one it is
- */
-func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool)
-{
-  // checks if a directory or file exist
-  let fileManager = FileManager.default
-  var isDir : ObjCBool = false
-  if fileManager.fileExists(atPath: fullPath, isDirectory:&isDir)
-  {
-    if isDir.boolValue
-    {
-      // file exists and is a directory
-      return (true, false)
-    }
-    else
-    {
-      // file exists and is not a directory
-      return (false, true)
-    }
-  }
-  else
-  {
-    // neither exist
-    return (false, false)
-  }
-}
 
 // Control Usbkey Functions
 
@@ -249,12 +207,10 @@ func checkFileDirectoryExist(fullPath: String) -> (Bool, Bool)
  */
 func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
 {
-  
-  let fileManager : FileManager = FileManager.default
   let fullUSBRoot : URL
   do
   {
-    fullUSBRoot = try fileManager.url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil,
+    fullUSBRoot = try FileManager.default.url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil,
                                       create: false).appendingPathComponent(usbkey_root)
   }
   catch
@@ -264,30 +220,29 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
   }
   
   // checks if INSERT file exist if not error will occur
-  let (_, isFile) = checkFileDirectoryExist(fullPath: fullUSBRoot.appendingPathComponent("INSERTED").path )
-  if (!isFile)
+  let isPath = FileManager.default.fileExists(atPath: fullUSBRoot.appendingPathComponent("INSERTED").path)
+  if (!isPath)
   {
     logger("Can't find file path %@", "Info", fullUSBRoot.appendingPathComponent("INSERTED").path)
-    return
   }
   else
   {
     do
     {
-      try fileManager.removeItem(at: URL(fileURLWithPath: fullUSBRoot.appendingPathComponent("INSERTED").path))
-      // lockscreen/logs off
-      shell("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", args: "-suspend")
-      logger("Lockscreen", "Info")
+      try FileManager.default.removeItem(at: URL(fileURLWithPath: fullUSBRoot.appendingPathComponent("INSERTED").path))
       
       // removes all keys from ssh
       shell(args: "ssh-add", "-D")
       logger("ssh-add -D: Removed all RSA keys", "Info")
+      
+      // lockscreen/logs off
+      shell("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession", args: "-suspend")
+      logger("Lockscreen", "Info")      
     }
     catch
     {
       // fails if file did exist but suddenly disappears
       logger("INSERTED file located at %@ Dissappeared. Error - %@", "Error", fullUSBRoot.path, errno)
-      return
     }
   }
 }
@@ -298,15 +253,13 @@ func usbkeyRemoveCtl (usbkey_root: String = "usbkey")
  */
 func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "usbkey/", dadisk: DADisk?)
 {
-  // genetics paths needed for insert
-  let mountPoint : String = "/Volumes/usbkey/" //where the encrypted image will mounted to when decrypted
-  let fileManager = FileManager.default
-  var libraryDirectory : URL
+  // where the encrypted image will mounted to when decrypted – naming of image was created prior
+  let mountPoint : String = "/Volumes/usbkey/"
   var fullUSBRoot : URL
   do
   {
-    libraryDirectory = try fileManager.url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
-    fullUSBRoot = libraryDirectory.appendingPathComponent(usbkey_root)
+    fullUSBRoot = try FileManager.default.url(for: .libraryDirectory, in: .userDomainMask,
+      appropriateFor: nil, create: false).appendingPathComponent(usbkey_root)
   }
   catch
   {
@@ -320,8 +273,7 @@ func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "us
    * Currently it will never run cause directory will always exist before this program will run
    */
   // checks to see if the directory for the key exist  and if not creates it and check if we need to setup USBKey
-  let (_, isFile) = checkFileDirectoryExist(fullPath: fullUSBRoot.path)
-  if (!isFile)
+  if (!FileManager.default.fileExists(atPath: fullUSBRoot.path))
   {
     logger("Key file doesn't exist", "Debug")
     eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath, dadisk: dadisk)
@@ -334,12 +286,11 @@ func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "us
   shell(stdInput: fileHandle, args: "hdiutil", "attach", "-stdinpass", diskPath.path + "/osx.sparseimage")
   
   // adds rsa keys to ssh from the decrypted image
-  let (isDirectory, _) = checkFileDirectoryExist(fullPath: mountPoint)
-  if (isDirectory)
+  if (FileManager.default.fileExists(atPath: mountPoint))
   {
     do
     {
-      let files = try fileManager.contentsOfDirectory(atPath: mountPoint)
+      let files = try FileManager.default.contentsOfDirectory(atPath: mountPoint)
       for key in files
       {
         if (key[key.startIndex] != ".")
@@ -349,13 +300,14 @@ func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "us
         }
       }
       shell("/usr/bin/osascript", args: "-e", "display notification \"Keys have been added\" with title \"UsbkeyCtl\"")
+      
+      // Create Insertion hint
+      FileManager.default.createFile(atPath: fullUSBRoot.appendingPathComponent("INSERTED").path , contents: nil, attributes: nil)
     }
     catch
     {
       // if directory that contains rsa doesn't exist error will occur
       logger("Dirctory %@ suddenly disppeared. Error - %@", "Error", mountPoint, errno)
-      eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath, dadisk: dadisk)
-      return
     }
   }
   else
@@ -367,9 +319,6 @@ func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "us
   let (terminationStatus, output) = shell(args: "hdiutil", "eject", mountPoint)
   logger("hdiutil eject %@: %@, Status - %@", "Info", mountPoint, output!, terminationStatus)
   
-  // Create Insertion hint
-  fileManager.createFile(atPath: fullUSBRoot.appendingPathComponent("INSERTED").path , contents: nil, attributes: nil)
-  
   // Ejects usbkey
   eject(fullUSBRoot: fullUSBRoot, diskPath: diskPath, dadisk: dadisk)
 }
@@ -379,8 +328,8 @@ func usbkeyInsertCtl(keyPath: String, diskPath : URL, usbkey_root : String = "us
  */
 func eject(fullUSBRoot : URL? = nil, diskPath : URL, override : Bool = false, dadisk: DADisk?)
 {
-  let (_, isFile) = checkFileDirectoryExist(fullPath: fullUSBRoot!.appendingPathComponent("EJECT").path)
-  if (isFile || override)
+  let isPath = FileManager.default.fileExists(atPath: fullUSBRoot!.appendingPathComponent("EJECT").path)
+  if (isPath || override)
   {
     let wholeDisk = DADiskCopyWholeDisk(dadisk!)
     DADiskUnmount(dadisk!, DADiskUnmountOptions(kDADiskUnmountOptionForce), nil, nil)
@@ -396,7 +345,7 @@ func logger(_ description: StaticString, _ type: String, _ args: CVarArg...)
 {
   if #available(OSX 10.12, *)
   {
-    let customLog = OSLog(subsystem: "com.bioneos.usbkey_osx", category: "usbkey")
+    let customLog = OSLog(subsystem: "com.bioneos.usbkey", category: "usbkey")
     let types : [String: OSLogType] = ["Info": .info, "Debug": .debug, "Error": .error]
     os_log(description, log: customLog, type: types[type] ?? .default, args)
   }
@@ -409,7 +358,7 @@ func logger(_ description: StaticString, _ type: String, _ args: CVarArg...)
 /*
  * the driver that will be run or simply the main function
  */
-let usbEventDetector = IOUSBDetector(vendorID: IOUSBDetector.SANDISKID, productID: IOUSBDetector.CRUZERFITID)
-_ = usbEventDetector?.startDetection()
+let usbEventDetector = IOUSBDetector()
+_ = usbEventDetector.startDetection()
 
 RunLoop.main.run()
