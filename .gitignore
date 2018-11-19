@@ -4,6 +4,6 @@ platforms/osx/Package/Root/*
 platforms/osx/Package/*.pkg
 platforms/osx/.build
 platforms/osx/UsbkeyCtlTool.xcodeproj/xcuserdata
-platforms/osx/UsbkeyCtlTool.xcodeprj/project.xcworkspace/xcuserdata/
-platforms/osx/UsbkeyCtlTool.xcodeprj/project.xcworkspace/xcuserdata/contents.xcworkspacedata
+platforms/osx/UsbkeyCtlTool.xcodeproj/project.xcworkspace/xcuserdata/
+platforms/osx/UsbkeyCtlTool.xcodeproj/project.xcworkspace/contents.xcworkspacedata
 usbkey-osx/
