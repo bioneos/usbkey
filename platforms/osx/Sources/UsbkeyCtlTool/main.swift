@@ -37,8 +37,7 @@ class USBDetector
     // Setting the iterator to zero signalifying no event has occurred
     removedIterator = 0
     
-    // A thread use to schedule IONotificationPortRef/DASession objects to monitor events
-    // TODO: Look for better comment
+    // Creates a run loop to schedule and monitor events automatically for IONotificationPortRef/DASession objects
     DASessionScheduleWithRunLoop(session!, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
     CFRunLoopAddSource(CFRunLoopGetMain(), IONotificationPortGetRunLoopSource(notifyPort)?.takeRetainedValue(), CFRunLoopMode.commonModes)
   }
@@ -133,15 +132,16 @@ class USBDetector
     return true
   }
   
-  // Release IO service objects
+  // Release IO/DA objects
   func stopDetection()
   {
-    // TODO: Looking into destroy function in IOKit
     guard self.removedIterator != 0 else
     {
       return
     }
     IOObjectRelease(self.removedIterator)
+    IONotificationPortDestroy(notifyPort)
+    DASessionUnscheduleFromRunLoop(session!, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
     self.removedIterator = 0
   }
 }
