@@ -16,9 +16,6 @@ class USBDetector
   static let USB_VENDOR_KEY: String = "SanDisk"
   static let USB_PRODUCT_KEY: String = "Cruzer Fit"
   
-  // A thread use to schedule IONotificationPortRef/DASession objects to monitor events
-  private let queue: DispatchQueue
-  
   // A port for communication with I/O ports on a computer
   private let notifyPort: IONotificationPortRef
   
@@ -31,22 +28,19 @@ class USBDetector
   // Constructor
   init()
   {
-    queue = DispatchQueue.global(qos: DispatchQoS.QoSClass.default)
-    
     // Creates disk arbitration session
     session = DASessionCreate(CFAllocatorGetDefault().takeRetainedValue())
-    
-    // Setup the session to a dispatch queue
-    DASessionSetDispatchQueue(session!, queue)
     
     // Creates I/O port to detect of usb device event
     notifyPort = IONotificationPortCreate(kIOMasterPortDefault)!
     
-    // Setup the notify port to a dispatch queue
-    IONotificationPortSetDispatchQueue(notifyPort, queue)
-    
     // Setting the iterator to zero signalifying no event has occurred
     removedIterator = 0
+    
+    // A thread use to schedule IONotificationPortRef/DASession objects to monitor events
+    // TODO: Look for better comment
+    DASessionScheduleWithRunLoop(session!, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+    CFRunLoopAddSource(CFRunLoopGetMain(), IONotificationPortGetRunLoopSource(notifyPort)?.takeRetainedValue(), CFRunLoopMode.commonModes)
   }
   
   deinit
@@ -142,6 +136,7 @@ class USBDetector
   // Release IO service objects
   func stopDetection()
   {
+    // TODO: Looking into destroy function in IOKit
     guard self.removedIterator != 0 else
     {
       return
@@ -340,4 +335,4 @@ func usbkeyInsertCtl(keyPath: String, diskPath: URL, usbkey_root: String = "usbk
 let usbEventDetector = USBDetector()
 _ = usbEventDetector.startDetection()
 
-RunLoop.main.run()
+CFRunLoopRun()
