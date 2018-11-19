@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Variables for file placement and name of user
+launch_dist=${HOME}'/Library/LaunchAgents/com.bioneos.usbkeyctl.plist'
+username=$(ls -l /dev/console | /usr/bin/awk '{ print $3 }')
+uid=$(id -u ${username})
+
+# Removes previous versions of .plist
+launchctl bootout gui/$uid ${launch_dist} || true
+rm ${launch_dist} || true
+
+# Copies .plist to local LaunchAgent directory and changes .plist to current user
+cp 'com.bioneos.usbkeyctl.plist' ${launch_dist}
+chown ${username}:staff ${launch_dist}
+launchctl bootstrap gui/$uid/ ${launch_dist}
+exit 0

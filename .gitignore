@@ -1,4 +1,9 @@
 *.sparseimage
 .DS_Store
-usbkey-osx/CommandLineTool/.build
-usbkey-osx/CommandLineTool/Packages
+platforms/osx/Package/Root/*
+platforms/osx/Package/*.pkg
+platforms/osx/UsbkeyCtlTool/.build
+platforms/osx/UsbkeyCtlTool.xcodeproj/xcuserdata
+platforms/osx/UsbkeyCtlTool.xcoodeprj/project.xcworkspace/xcuserdata
+platforms/osx/UsbkeyCtlTool.xcoodeprj/project.xcworkspace/xcuserdata/contents.xcworkspacedata
+usbkey-osx/
